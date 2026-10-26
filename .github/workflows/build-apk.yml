@@ -1,0 +1,94 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: src
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Check undefined names (no-undef)
+        working-directory: src
+        run: |
+          npm install --no-audit --no-fund
+          npm run lint
+
+      - name: Create blank Expo project (latest SDK)
+        run: npx --yes create-expo-app@latest app --template blank --no-install
+
+      - name: Add App.js, name, package, Health Connect
+        run: |
+          cp src/App.js app/App.js
+          cp -r src/lib app/lib
+          cd app
+          node -e "
+            const fs = require('fs');
+            const c = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            c.expo.name = 'Биовозраст';
+            c.expo.slug = 'bio-age';
+            c.expo.android = {
+              ...(c.expo.android || {}),
+              package: 'com.bioage.proto',
+              permissions: [
+                'android.permission.health.READ_STEPS',
+                'android.permission.health.READ_SLEEP',
+                'android.permission.health.READ_HEART_RATE',
+                'android.permission.health.READ_RESTING_HEART_RATE',
+                'android.permission.health.READ_EXERCISE',
+                'android.permission.health.READ_VO2_MAX',
+                'android.permission.health.READ_LEAN_BODY_MASS',
+                'android.permission.health.READ_HEALTH_DATA_HISTORY'
+              ],
+              // Данные не покидают телефон: у приложения нет даже доступа в интернет.
+              blockedPermissions: [
+                'android.permission.INTERNET',
+                'android.permission.SYSTEM_ALERT_WINDOW',
+                'android.permission.READ_EXTERNAL_STORAGE',
+                'android.permission.WRITE_EXTERNAL_STORAGE'
+              ]
+            };
+            c.expo.plugins = [
+              ...(c.expo.plugins || []),
+              'react-native-health-connect',
+              ['expo-build-properties', { android: { minSdkVersion: 26 } }]
+            ];
+            fs.writeFileSync('app.json', JSON.stringify(c, null, 2));
+          "
+
+      - name: Install dependencies
+        working-directory: app
+        run: |
+          npm install
+          npx expo install react-native-health-connect expo-build-properties @react-native-async-storage/async-storage react-native-safe-area-context
+
+      - name: Prebuild Android project
+        working-directory: app
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build release APK
+        working-directory: app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: bio-age-apk
+          path: app/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
