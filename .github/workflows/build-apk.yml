@@ -35,11 +35,13 @@ jobs:
         run: |
           cp src/App.js app/App.js
           cp -r src/lib app/lib
+          mkdir -p app/assets
+          cp src/assets/bio-mark.png app/assets/bio-mark.png
           cd app
           node -e "
             const fs = require('fs');
             const c = JSON.parse(fs.readFileSync('app.json', 'utf8'));
-            c.expo.name = 'Биовозраст';
+            c.expo.name = 'bio';
             c.expo.slug = 'bio-age';
             c.expo.android = {
               ...(c.expo.android || {}),
@@ -65,6 +67,7 @@ jobs:
             c.expo.plugins = [
               ...(c.expo.plugins || []),
               'react-native-health-connect',
+              ['expo-splash-screen', { image: './assets/bio-mark.png', backgroundColor: '#11212D', imageWidth: 288 }],
               ['expo-build-properties', { android: { minSdkVersion: 26 } }]
             ];
             fs.writeFileSync('app.json', JSON.stringify(c, null, 2));
@@ -74,7 +77,7 @@ jobs:
         working-directory: app
         run: |
           npm install
-          npx expo install react-native-health-connect expo-build-properties @react-native-async-storage/async-storage react-native-safe-area-context
+          npx expo install react-native-health-connect expo-build-properties expo-splash-screen @react-native-async-storage/async-storage react-native-safe-area-context
 
       - name: Prebuild Android project
         working-directory: app

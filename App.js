@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BackHandler, StatusBar, View } from 'react-native';
+import { BackHandler, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './lib/ErrorScreen';
-import { COLORS } from './lib/theme';
+import { SPLASH } from './lib/theme';
 import { tr } from './lib/i18n';
 import { loadProfile, saveProfile } from './lib/storage';
 import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES } from './lib/health';
 import { loadDataset, summarize, ageAt, HISTORY_DAYS, RECENT_DAYS } from './lib/metrics';
 import { corrections, pace } from './lib/formula';
+import { LaunchScreen } from './lib/screens/LaunchScreen';
 import { SetupScreen } from './lib/screens/SetupScreen';
 import { PermissionsScreen } from './lib/screens/PermissionsScreen';
 import { NoHealthConnectScreen } from './lib/screens/NoHealthConnectScreen';
@@ -68,7 +69,9 @@ function Main() {
   }, [load]);
 
   useEffect(() => {
-    loadProfile().then((p) => {
+    // Экран запуска держим хотя бы секунду, чтобы он не мигал.
+    const minDelay = new Promise((r) => setTimeout(r, 1000));
+    Promise.all([loadProfile(), minDelay]).then(([p]) => {
       setProfile(p);
       if (p) start(p);
       else setScreen('setup');
@@ -114,7 +117,7 @@ function Main() {
 
   switch (screen) {
     case 'boot':
-      return <View style={{ flex: 1, backgroundColor: COLORS.bg }} />;
+      return <LaunchScreen />;
     case 'setup':
       return <SetupScreen profile={profile} onSave={onSaveProfile} onBack={profile ? () => setScreen('home') : undefined} />;
     case 'nohc':
@@ -142,7 +145,7 @@ function Main() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={SPLASH.bg} />
       <ErrorBoundary>
         <Main />
       </ErrorBoundary>
