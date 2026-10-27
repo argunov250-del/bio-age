@@ -36,16 +36,22 @@ jobs:
           cp src/App.js app/App.js
           cp -r src/lib app/lib
           mkdir -p app/assets
-          cp src/assets/bio-mark.png app/assets/bio-mark.png
+          cp src/assets/*.png app/assets/
           cd app
           node -e "
             const fs = require('fs');
             const c = JSON.parse(fs.readFileSync('app.json', 'utf8'));
             c.expo.name = 'bio';
             c.expo.slug = 'bio-age';
+            c.expo.icon = './assets/icon.png';
             c.expo.android = {
               ...(c.expo.android || {}),
               package: 'com.bioage.proto',
+              adaptiveIcon: {
+                foregroundImage: './assets/adaptive-icon.png',
+                monochromeImage: './assets/adaptive-icon-mono.png',
+                backgroundColor: '#11212D'
+              },
               permissions: [
                 'android.permission.health.READ_STEPS',
                 'android.permission.health.READ_SLEEP',
