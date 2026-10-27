@@ -73,7 +73,8 @@ jobs:
             c.expo.plugins = [
               ...(c.expo.plugins || []),
               'react-native-health-connect',
-              ['expo-splash-screen', { image: './assets/bio-mark.png', backgroundColor: '#11212D', imageWidth: 288 }],
+              // Системный экран — только фон: логотип рисует экран загрузки приложения.
+              ['expo-splash-screen', { image: './assets/splash-blank.png', backgroundColor: '#11212D', imageWidth: 1 }],
               ['expo-build-properties', { android: { minSdkVersion: 26 } }]
             ];
             fs.writeFileSync('app.json', JSON.stringify(c, null, 2));

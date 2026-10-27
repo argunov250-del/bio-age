@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './lib/ErrorScreen';
 import { SPLASH } from './lib/theme';
 import { tr } from './lib/i18n';
-import { loadProfile, saveProfile } from './lib/storage';
+import { loadProfile, saveProfile, loadResult, saveResult } from './lib/storage';
 import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES } from './lib/health';
 import { loadDataset, summarize, ageAt, HISTORY_DAYS, RECENT_DAYS } from './lib/metrics';
 import { corrections, pace } from './lib/formula';
@@ -26,61 +26,79 @@ function compute(ds, profile) {
 }
 
 function Main() {
-  const [screen, setScreen] = useState('boot');
+  const [screen, setScreen] = useState('intro');
+  const [ready, setReady] = useState(false);
   const [profile, setProfile] = useState(null);
   const [sdk, setSdk] = useState('');
   const [granted, setGranted] = useState(new Set());
   const [dataset, setDataset] = useState(null);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
+  // Пока идёт приветствие, проверки Health Connect уже работают в фоне;
+  // куда идти дальше, запоминаем и переходим, когда приветствие закончится.
+  const introDone = useRef(false);
+  const pendingRoute = useRef('home');
+  const go = useCallback((route) => {
+    if (introDone.current) setScreen(route);
+    else pendingRoute.current = route;
+  }, []);
 
   const load = useCallback(async (prof, g) => {
     setLoading(true);
     setError('');
     try {
-      const ds = await loadDataset(g, prof, setProgress);
+      const ds = await loadDataset(g, prof);
+      const r = compute(ds, prof);
       setDataset(ds);
-      setResult(compute(ds, prof));
+      setResult(r);
+      saveResult(r);
     } catch (e) {
       setError(tr('Ошибка: ') + String((e && e.message) || e));
     }
-    setProgress('');
     setLoading(false);
   }, []);
 
   // Проверка Health Connect и разрешений, затем загрузка.
   const start = useCallback(async (prof) => {
+    setLoading(true);
     const st = await sdkStatus();
     setSdk(st);
-    if (st !== 'ok') return setScreen('nohc');
+    if (st !== 'ok') {
+      setLoading(false);
+      return go('nohc');
+    }
     try {
       await init();
       const g = await grantedTypes();
       setGranted(g);
-      if (!RECORD_TYPES.some((t) => g.has(t))) return setScreen('permissions');
-      setScreen('home');
+      if (!RECORD_TYPES.some((t) => g.has(t))) {
+        setLoading(false);
+        return go('permissions');
+      }
+      go('home');
       load(prof, g);
     } catch (e) {
       setError(tr('Ошибка: ') + String((e && e.message) || e));
-      setScreen('home');
+      setLoading(false);
+      go('home');
     }
-  }, [load]);
+  }, [go, load]);
 
-  const [loaded, setLoaded] = useState(false);
+  // Профиль и последний расчёт — сразу при запуске, пока крутится экран загрузки.
   useEffect(() => {
-    loadProfile().then((p) => {
+    Promise.all([loadProfile(), loadResult()]).then(([p, r]) => {
       setProfile(p);
-      setLoaded(true);
+      if (r) setResult(r);
+      setReady(true);
+      if (p) start(p);
     });
-  }, []);
+  }, [start]);
 
-  // Приветственный экран закончился: дальше профиль или проверка Health Connect.
-  const onWelcomeDone = useCallback(() => {
-    if (profile) start(profile);
-    else setScreen('setup');
-  }, [profile, start]);
+  const onIntroDone = useCallback(() => {
+    introDone.current = true;
+    setScreen(profile ? pendingRoute.current : 'setup');
+  }, [profile]);
 
   const goHome = useCallback(() => {
     if (screen === 'breakdown' || screen === 'debug' || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
@@ -98,6 +116,7 @@ function Main() {
   const onSaveProfile = async (p) => {
     await saveProfile(p);
     setProfile(p);
+    setScreen('home');
     start(p);
   };
 
@@ -120,8 +139,8 @@ function Main() {
   const back = granted.size ? () => setScreen('home') : undefined;
 
   switch (screen) {
-    case 'boot':
-      return <LaunchScreen firstRun={loaded && !profile} onDone={loaded ? onWelcomeDone : null} />;
+    case 'intro':
+      return <LaunchScreen ready={ready} firstRun={ready && !profile} onDone={onIntroDone} />;
     case 'setup':
       return <SetupScreen profile={profile} onSave={onSaveProfile} onBack={profile ? () => setScreen('home') : undefined} />;
     case 'nohc':
@@ -137,7 +156,6 @@ function Main() {
         <HomeScreen
           result={result}
           loading={loading}
-          progress={progress}
           error={error}
           onReload={() => start(profile)}
           onOpen={setScreen}
