@@ -68,15 +68,19 @@ function Main() {
     }
   }, [load]);
 
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
-    // Экран запуска держим хотя бы секунду, чтобы он не мигал.
-    const minDelay = new Promise((r) => setTimeout(r, 1000));
-    Promise.all([loadProfile(), minDelay]).then(([p]) => {
+    loadProfile().then((p) => {
       setProfile(p);
-      if (p) start(p);
-      else setScreen('setup');
+      setLoaded(true);
     });
-  }, [start]);
+  }, []);
+
+  // Приветственный экран закончился: дальше профиль или проверка Health Connect.
+  const onWelcomeDone = useCallback(() => {
+    if (profile) start(profile);
+    else setScreen('setup');
+  }, [profile, start]);
 
   const goHome = useCallback(() => {
     if (screen === 'breakdown' || screen === 'debug' || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
@@ -117,7 +121,7 @@ function Main() {
 
   switch (screen) {
     case 'boot':
-      return <LaunchScreen />;
+      return <LaunchScreen firstRun={loaded && !profile} onDone={loaded ? onWelcomeDone : null} />;
     case 'setup':
       return <SetupScreen profile={profile} onSave={onSaveProfile} onBack={profile ? () => setScreen('home') : undefined} />;
     case 'nohc':
