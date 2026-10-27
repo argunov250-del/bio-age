@@ -86,7 +86,7 @@ jobs:
         working-directory: app
         run: |
           npm install
-          npx expo install react-native-health-connect expo-build-properties expo-splash-screen @react-native-async-storage/async-storage react-native-safe-area-context
+          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context
 
       - name: Prebuild Android project
         working-directory: app
