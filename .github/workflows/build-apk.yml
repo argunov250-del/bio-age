@@ -43,7 +43,7 @@ jobs:
           node -e "
             const fs = require('fs');
             const c = JSON.parse(fs.readFileSync('app.json', 'utf8'));
-            c.expo.name = 'bio';
+            c.expo.name = 'Epimely';
             c.expo.slug = 'bio-age';
             c.expo.icon = './assets/icon.png';
             c.expo.android = {
