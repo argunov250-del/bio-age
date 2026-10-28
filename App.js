@@ -4,9 +4,8 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { ErrorBoundary } from './lib/ErrorScreen';
 import { THEMES, TAB_MS } from './lib/theme';
 import { ColorsContext } from './lib/colors';
-import { tr, RU } from './lib/i18n';
-import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries, loadCoach, saveCoach, loadApiKey, saveApiKey } from './lib/storage';
-import { askCoach, coachSummary, coachError } from './lib/coach';
+import { tr } from './lib/i18n';
+import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries } from './lib/storage';
 import { applyManual } from './lib/manual';
 import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES, EXTRA_TYPES } from './lib/health';
 import { loadDataset, summarize, series, ageAt, HISTORY_DAYS, RECENT_DAYS } from './lib/metrics';
@@ -29,6 +28,7 @@ import { ProfileScreen } from './lib/screens/ProfileScreen';
 import { DetailScreen } from './lib/screens/DetailScreen';
 import { TipsScreen } from './lib/screens/TipsScreen';
 import { LogScreen } from './lib/screens/LogScreen';
+import { CoachScreen } from './lib/screens/CoachScreen';
 import { recommend } from './lib/recommend';
 import { DebugScreen } from './lib/screens/DebugScreen';
 
@@ -98,39 +98,6 @@ function Main() {
     else pendingRoute.current = route;
   }, []);
 
-  // ИИ-коуч: последний ответ Claude, ключ и состояние запроса
-  // ('' — выключен, 'thinking', 'ok', 'offline', 'error:key' и т. п.).
-  const [coach, setCoach] = useState(null);
-  const coachRef = useRef(null);
-  const [coachState, setCoachState] = useState('');
-  const [hasKey, setHasKey] = useState(false);
-  const keyRef = useRef('');
-  const runCoach = useCallback(async (r, prof, force) => {
-    if (!r || !prof || !prof.aiOnline || !keyRef.current) {
-      setCoachState('');
-      return '';
-    }
-    const cached = coachRef.current;
-    if (!force && cached && cached.computedAt === r.computedAt && cached.ru === RU) {
-      setCoachState('ok');
-      return 'ok';
-    }
-    setCoachState('thinking');
-    try {
-      const a = await askCoach(keyRef.current, coachSummary(r, prof));
-      const c = { text: a.text, at: Date.now(), computedAt: r.computedAt, ru: RU };
-      coachRef.current = c;
-      setCoach(c);
-      saveCoach(c);
-      setCoachState('ok');
-      return 'ok';
-    } catch (e) {
-      const why = coachError(e);
-      setCoachState(why === 'offline' ? 'offline' : 'error:' + why);
-      return why;
-    }
-  }, []);
-
   const load = useCallback(async (prof, g) => {
     setLoading(true);
     setError('');
@@ -140,12 +107,11 @@ function Main() {
       setDataset(ds);
       setResult(r);
       saveResult(r);
-      runCoach(r, prof);
     } catch (e) {
       setError(tr('Ошибка: ') + String((e && e.message) || e));
     }
     setLoading(false);
-  }, [runCoach]);
+  }, []);
 
   // Проверка Health Connect и разрешений, затем загрузка.
   const start = useCallback(async (prof) => {
@@ -185,12 +151,8 @@ function Main() {
   // Старые результаты анализов (раздел удалён) стираем с телефона.
   useEffect(() => {
     purgeLabs();
-    Promise.all([loadProfile(), loadResult(), loadEntries(), loadCoach(), loadApiKey()]).then(([p, r, e, ch, key]) => {
+    Promise.all([loadProfile(), loadResult(), loadEntries()]).then(([p, r, e]) => {
       setProfile(p);
-      coachRef.current = ch;
-      setCoach(ch);
-      keyRef.current = key;
-      setHasKey(!!key);
       if (r) setResult(r);
       entriesRef.current = e;
       setEntries(e);
@@ -228,7 +190,7 @@ function Main() {
       setTab('home');
       return true;
     }
-    if (['debug', 'tips', 'log'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'tips', 'log', 'coach'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -290,20 +252,6 @@ function Main() {
   };
   const missingAccess = granted.size > 0 && EXTRA_TYPES.some((t) => !granted.has(t));
   const refresh = () => start(profile);
-  // Ключ Claude и включение онлайн-советов (из профиля).
-  const onSaveKey = async (k) => {
-    await saveApiKey(k);
-    keyRef.current = k;
-    setHasKey(!!k);
-    if (!k) setCoachState('');
-  };
-  const onAiToggle = async (on) => {
-    const p = { ...profile, aiOnline: on };
-    await saveQuiet(p);
-    if (on) runCoach(result, p, true);
-    else setCoachState('');
-  };
-  const onTestAi = () => runCoach(result, profile, true);
 
   // Направление перехода: вглубь (подробный экран) — справа, назад к вкладкам — слева;
   // вкладки — со стороны новой вкладки. Считается в момент смены экрана/вкладки.
@@ -340,6 +288,8 @@ function Main() {
             <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack} />
           </ColorsContext.Provider>
         );
+      case 'coach':
+        return <CoachScreen result={result} profile={profile} onBack={goBack} onTips={() => setScreen('tips')} />;
       case 'tips':
         return (
           <ColorsContext.Provider value={THEMES.steel}>
@@ -367,11 +317,9 @@ function Main() {
                   <WorkoutsScreen result={result} loading={loading} onRefresh={refresh} onOpen={open} />
                 ) : tab === 'profile' ? (
                   <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
-                    onSaveProfile={saveQuiet} hasKey={hasKey} onSaveKey={onSaveKey} onAiToggle={onAiToggle}
-                    onTestAi={onTestAi} coachState={coachState} hasResult={!!result} />
+                    onSaveProfile={saveQuiet} />
                 ) : (
-                  <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh}
-                    coach={coach} coachState={coachState} />
+                  <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh} />
                 )}
               </FadeIn>
             </ColorsContext.Provider>
