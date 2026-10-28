@@ -31,6 +31,7 @@ import { TipsScreen } from './lib/screens/TipsScreen';
 import { LogScreen } from './lib/screens/LogScreen';
 import { CoachScreen } from './lib/screens/CoachScreen';
 import { CycleScreen } from './lib/screens/CycleScreen';
+import { AboutDataScreen } from './lib/screens/AboutDataScreen';
 import { dayKey } from './lib/metrics';
 import { recommend } from './lib/recommend';
 import { DebugScreen } from './lib/screens/DebugScreen';
@@ -197,7 +198,7 @@ function Main() {
       setTab('home');
       return true;
     }
-    if (['debug', 'tips', 'log', 'coach', 'cycle'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'tips', 'log', 'coach', 'cycle', 'about'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -303,6 +304,8 @@ function Main() {
             <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack} />
           </ColorsContext.Provider>
         );
+      case 'about':
+        return <ColorsContext.Provider value={THEMES.steel}><AboutDataScreen onBack={goBack} /></ColorsContext.Provider>;
       case 'cycle':
         return (
           <ColorsContext.Provider value={THEMES.steel}>
