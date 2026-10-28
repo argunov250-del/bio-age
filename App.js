@@ -7,12 +7,13 @@ import { ColorsContext } from './lib/colors';
 import { tr } from './lib/i18n';
 import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries } from './lib/storage';
 import { applyManual } from './lib/manual';
-import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES, EXTRA_TYPES } from './lib/health';
+import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES, EXTRA_TYPES, CYCLE_TYPES } from './lib/health';
 import { loadDataset, summarize, series, ageAt, HISTORY_DAYS, RECENT_DAYS } from './lib/metrics';
 import { corrections, pace } from './lib/formula';
 import { advice } from './lib/advice';
 import { computeMetrics } from './lib/windows';
 import { computeScores } from './lib/scores';
+import { collectPeriods, cycleBase } from './lib/cycle';
 import { buildDetail } from './lib/details';
 import { TabBar, FadeIn } from './lib/ui';
 import { ScreenIn } from './lib/motion';
@@ -29,6 +30,8 @@ import { DetailScreen } from './lib/screens/DetailScreen';
 import { TipsScreen } from './lib/screens/TipsScreen';
 import { LogScreen } from './lib/screens/LogScreen';
 import { CoachScreen } from './lib/screens/CoachScreen';
+import { CycleScreen } from './lib/screens/CycleScreen';
+import { dayKey } from './lib/metrics';
 import { recommend } from './lib/recommend';
 import { DebugScreen } from './lib/screens/DebugScreen';
 
@@ -48,7 +51,11 @@ function compute(ds, profile) {
     trend.push({ t: end.getTime(), v: age + corrections(v, { age, sex: profile.sex }).total });
   }
   const metrics = computeMetrics(ds, profile);
+  // Цикл — только для женщин и не во время беременности.
+  const mode = profile.lifestyle && profile.lifestyle.cycle;
+  const cycle = profile.sex === 'f' && mode !== 'pregnant' ? cycleBase(collectPeriods(ds), mode) : null;
   return {
+    cycle,
     v180, v30, corr180, corr30, chrono: p.age, bio: p.age + corr180.total, pace: pace(v180, v30, p),
     trend, series: series(ds), advice: advice(v180, corr180, p),
     metrics, scores: computeScores(ds, metrics), computedAt: new Date().toISOString(),
@@ -190,7 +197,7 @@ function Main() {
       setTab('home');
       return true;
     }
-    if (['debug', 'tips', 'log', 'coach'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'tips', 'log', 'coach', 'cycle'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -218,7 +225,7 @@ function Main() {
   const onRequest = async () => {
     setLoading(true);
     try {
-      const g = await askPermissions();
+      const g = await askPermissions(profile && profile.sex === 'f');
       setGranted(g);
       setLoading(false);
       if (RECORD_TYPES.some((t) => g.has(t))) {
@@ -250,7 +257,8 @@ function Main() {
     setScreen('home');
     start(p);
   };
-  const missingAccess = granted.size > 0 && EXTRA_TYPES.some((t) => !granted.has(t));
+  const wanted = profile && profile.sex === 'f' ? [...EXTRA_TYPES, ...CYCLE_TYPES] : EXTRA_TYPES;
+  const missingAccess = granted.size > 0 && wanted.some((t) => !granted.has(t));
   const refresh = () => start(profile);
 
   // Направление перехода: вглубь (подробный экран) — справа, назад к вкладкам — слева;
@@ -286,6 +294,13 @@ function Main() {
         return (
           <ColorsContext.Provider value={THEMES.steel}>
             <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack} />
+          </ColorsContext.Provider>
+        );
+      case 'cycle':
+        return (
+          <ColorsContext.Provider value={THEMES.steel}>
+            <CycleScreen base={result && result.cycle} onBack={goBack} onLogOther={() => open('log:period')}
+              onStartToday={() => addEntry({ id: String(Date.now()), type: 'period', date: dayKey(new Date()), days: (result && result.cycle && result.cycle.periodLen) || 5, t: Date.now() })} />
           </ColorsContext.Provider>
         );
       case 'coach':
