@@ -15,7 +15,7 @@ module.exports = [
         ecmaFeatures: { jsx: true },
       },
       sourceType: 'module',
-      globals: { ...globals.es2021, __DEV__: 'readonly', require: 'readonly', console: 'readonly', navigator: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly' },
+      globals: { ...globals.es2021, __DEV__: 'readonly', require: 'readonly', console: 'readonly', navigator: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly', requestAnimationFrame: 'readonly', cancelAnimationFrame: 'readonly' },
     },
     plugins: { react },
     rules: {

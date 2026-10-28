@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BackHandler, StatusBar, Animated, Easing } from 'react-native';
+import { BackHandler, StatusBar, Animated, Easing, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './lib/ErrorScreen';
 import { THEMES, TAB_MS } from './lib/theme';
@@ -16,6 +16,7 @@ import { computeScores } from './lib/scores';
 import { buildDetail } from './lib/details';
 import { NAV_TABS } from './lib/layout';
 import { TabBar, FadeIn } from './lib/ui';
+import { ScreenIn } from './lib/motion';
 import { IconHome, IconActivity, IconProfile, IconWorkout } from './lib/icons';
 import { LaunchScreen } from './lib/screens/LaunchScreen';
 import { SetupScreen } from './lib/screens/SetupScreen';
@@ -252,76 +253,95 @@ function Main() {
   const missingAccess = granted.size > 0 && EXTRA_TYPES.some((t) => !granted.has(t));
   const refresh = () => start(profile);
 
-  switch (screen) {
-    case 'intro':
-      return <LaunchScreen ready={ready} firstRun={ready && !profile} onDone={onIntroDone} />;
-    case 'setup':
-      return <SetupScreen profile={profile} onSave={onSaveProfile} onBack={profile ? () => setScreen('home') : undefined} />;
-    case 'nohc':
-      return <NoHealthConnectScreen status={sdk} onRetry={refresh} onSkip={skipHC} />;
-    case 'permissions':
-      return <PermissionsScreen onRequest={onRequest} onBack={back} busy={loading} granted={[...granted].length} onSkip={granted.size ? undefined : skipHC} />;
-    case 'debug':
-      return <DebugScreen granted={granted} sdk={sdk} dataset={dataset} onBack={() => setScreen('home')} />;
-    case 'log':
-      return (
-        <ColorsContext.Provider value={THEMES.steel}>
-          <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack} />
-        </ColorsContext.Provider>
-      );
-    case 'tips':
-      return (
-        <ColorsContext.Provider value={THEMES.steel}>
-          <TipsScreen rec={recommend(result, profile)} onBack={goBack} />
-        </ColorsContext.Provider>
-      );
-    case 'workouts':
-      return (
-        <ColorsContext.Provider value={THEMES.teal}>
-          <WorkoutsScreen result={result} loading={loading} onOpen={open} onBack={() => setScreen('home')} />
-        </ColorsContext.Provider>
-      );
-    case 'detail': {
-      const w = detail.key === 'workout' && result && result.series ? result.series.workouts[detail.arg] : null;
-      return (
-        <ColorsContext.Provider value={THEMES[THEME_OF[detail.from] || 'teal']}>
-          <DetailScreen detail={buildDetail(detail.key, result, profile, w)} onBack={goBack} />
-        </ColorsContext.Provider>
-      );
-    }
-    default: {
-      const theme = THEMES[TABS[tabIndex].theme];
-      return (
-        <Animated.View style={{ flex: 1, backgroundColor: tabColor(tabAnim, 'bg') }}>
-          <ColorsContext.Provider value={theme}>
-            <FadeIn key={tab}>
-              {tab === 'metrics' ? (
-                <MetricsScreen result={result} profile={profile} loading={loading} onRefresh={refresh}
-                  missingAccess={missingAccess} onAskAccess={onRequest} onOpen={open} />
-              ) : tab === 'workouts' ? (
-                <WorkoutsScreen result={result} loading={loading} onRefresh={refresh} onOpen={open} />
-              ) : tab === 'profile' ? (
-                <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
-                  onSaveProfile={saveQuiet} workoutsInside={NAV_TABS !== 4} />
-              ) : (
-                <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh} />
-              )}
-            </FadeIn>
+  // Направление перехода: вглубь (подробный экран) — справа, назад к вкладкам — слева;
+  // вкладки — со стороны новой вкладки. Считается в момент смены экрана/вкладки.
+  const nav = useRef({ screen, tab: tabIndex, dir: 0, tabDir: 0 }).current;
+  if (screen !== nav.screen) {
+    nav.dir = nav.screen === 'intro' ? 0 : screen === 'home' ? -1 : 1;
+    nav.screen = screen;
+  }
+  if (tabIndex !== nav.tab) {
+    nav.tabDir = tabIndex > nav.tab ? 1 : -1;
+    nav.tab = tabIndex;
+  }
+  if (screen === 'intro') return <LaunchScreen ready={ready} firstRun={ready && !profile} onDone={onIntroDone} />;
+  const screenKey = screen === 'detail' && detail ? `detail:${detail.key}:${detail.arg}` : screen;
+  return (
+    <View style={{ flex: 1, backgroundColor: THEMES.steel.bg }}>
+      <ScreenIn key={screenKey} dir={nav.dir}>{renderScreen()}</ScreenIn>
+    </View>
+  );
+
+  function renderScreen() {
+    switch (screen) {
+      case 'setup':
+        return <SetupScreen profile={profile} onSave={onSaveProfile} onBack={profile ? () => setScreen('home') : undefined} />;
+      case 'nohc':
+        return <NoHealthConnectScreen status={sdk} onRetry={refresh} onSkip={skipHC} />;
+      case 'permissions':
+        return <PermissionsScreen onRequest={onRequest} onBack={back} busy={loading} granted={[...granted].length} onSkip={granted.size ? undefined : skipHC} />;
+      case 'debug':
+        return <DebugScreen granted={granted} sdk={sdk} dataset={dataset} onBack={() => setScreen('home')} />;
+      case 'log':
+        return (
+          <ColorsContext.Provider value={THEMES.steel}>
+            <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack} />
           </ColorsContext.Provider>
-          <TabBar
-            tabs={TABS}
-            active={tab}
-            onChange={setTab}
-            bottom={insets.bottom + 8}
-            bg={tabColor(tabAnim, 'card')}
-            pill={tabColor(tabAnim, 'accent')}
-            iconOn={theme.onAccent}
-            iconOff={theme.sub}
-            textOn={theme.text}
-            textOff={theme.sub}
-          />
-        </Animated.View>
-      );
+        );
+      case 'tips':
+        return (
+          <ColorsContext.Provider value={THEMES.steel}>
+            <TipsScreen rec={recommend(result, profile)} onBack={goBack} />
+          </ColorsContext.Provider>
+        );
+      case 'workouts':
+        return (
+          <ColorsContext.Provider value={THEMES.teal}>
+            <WorkoutsScreen result={result} loading={loading} onOpen={open} onBack={() => setScreen('home')} />
+          </ColorsContext.Provider>
+        );
+      case 'detail': {
+        const w = detail.key === 'workout' && result && result.series ? result.series.workouts[detail.arg] : null;
+        return (
+          <ColorsContext.Provider value={THEMES[THEME_OF[detail.from] || 'teal']}>
+            <DetailScreen detail={buildDetail(detail.key, result, profile, w)} onBack={goBack} />
+          </ColorsContext.Provider>
+        );
+      }
+      default: {
+        const theme = THEMES[TABS[tabIndex].theme];
+        return (
+          <Animated.View style={{ flex: 1, backgroundColor: tabColor(tabAnim, 'bg') }}>
+            <ColorsContext.Provider value={theme}>
+              <FadeIn key={tab} dir={nav.tabDir}>
+                {tab === 'metrics' ? (
+                  <MetricsScreen result={result} profile={profile} loading={loading} onRefresh={refresh}
+                    missingAccess={missingAccess} onAskAccess={onRequest} onOpen={open} />
+                ) : tab === 'workouts' ? (
+                  <WorkoutsScreen result={result} loading={loading} onRefresh={refresh} onOpen={open} />
+                ) : tab === 'profile' ? (
+                  <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
+                    onSaveProfile={saveQuiet} workoutsInside={NAV_TABS !== 4} />
+                ) : (
+                  <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh} />
+                )}
+              </FadeIn>
+            </ColorsContext.Provider>
+            <TabBar
+              tabs={TABS}
+              active={tab}
+              onChange={setTab}
+              bottom={insets.bottom + 8}
+              bg={tabColor(tabAnim, 'card')}
+              pill={tabColor(tabAnim, 'accent')}
+              iconOn={theme.onAccent}
+              iconOff={theme.sub}
+              textOn={theme.text}
+              textOff={theme.sub}
+            />
+          </Animated.View>
+        );
+      }
     }
   }
 }
