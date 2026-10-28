@@ -25,6 +25,8 @@ import { MetricsScreen } from './lib/screens/MetricsScreen';
 import { WorkoutsScreen } from './lib/screens/WorkoutsScreen';
 import { ProfileScreen } from './lib/screens/ProfileScreen';
 import { DetailScreen } from './lib/screens/DetailScreen';
+import { TipsScreen } from './lib/screens/TipsScreen';
+import { recommend } from './lib/recommend';
 import { BreakdownScreen } from './lib/screens/BreakdownScreen';
 import { DebugScreen } from './lib/screens/DebugScreen';
 
@@ -170,7 +172,7 @@ function Main() {
       setTab('home');
       return true;
     }
-    if (['breakdown', 'debug', 'workouts'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['breakdown', 'debug', 'workouts', 'tips'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -228,6 +230,12 @@ function Main() {
       return <BreakdownScreen result={result} profile={{ age: result.chrono, sex: profile.sex }} onBack={() => setScreen('home')} />;
     case 'debug':
       return <DebugScreen granted={granted} sdk={sdk} dataset={dataset} onBack={() => setScreen('home')} />;
+    case 'tips':
+      return (
+        <ColorsContext.Provider value={THEMES.steel}>
+          <TipsScreen rec={recommend(result, profile)} onBack={goBack} />
+        </ColorsContext.Provider>
+      );
     case 'workouts':
       return (
         <ColorsContext.Provider value={THEMES.teal}>
@@ -257,7 +265,7 @@ function Main() {
                 <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
                   onSaveProfile={saveQuiet} workoutsInside={NAV_TABS !== 4} />
               ) : (
-                <HomeScreen result={result} loading={loading} error={error} onOpen={open} onRefresh={refresh} />
+                <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh} />
               )}
             </FadeIn>
           </ColorsContext.Provider>
