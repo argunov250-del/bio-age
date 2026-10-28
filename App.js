@@ -4,8 +4,9 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { ErrorBoundary } from './lib/ErrorScreen';
 import { THEMES, TAB_MS } from './lib/theme';
 import { ColorsContext } from './lib/colors';
-import { tr } from './lib/i18n';
-import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries } from './lib/storage';
+import { tr, RU } from './lib/i18n';
+import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries, loadCoach, saveCoach, loadApiKey, saveApiKey } from './lib/storage';
+import { askCoach, coachSummary, coachError } from './lib/coach';
 import { applyManual } from './lib/manual';
 import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES, EXTRA_TYPES } from './lib/health';
 import { loadDataset, summarize, series, ageAt, HISTORY_DAYS, RECENT_DAYS } from './lib/metrics';
@@ -14,7 +15,6 @@ import { advice } from './lib/advice';
 import { computeMetrics } from './lib/windows';
 import { computeScores } from './lib/scores';
 import { buildDetail } from './lib/details';
-import { NAV_TABS } from './lib/layout';
 import { TabBar, FadeIn } from './lib/ui';
 import { ScreenIn } from './lib/motion';
 import { IconHome, IconActivity, IconProfile, IconWorkout } from './lib/icons';
@@ -59,7 +59,7 @@ function compute(ds, profile) {
 const TABS = [
   { key: 'home', title: tr('Обзор'), Icon: IconHome, theme: 'steel' },
   { key: 'metrics', title: tr('Метрики'), Icon: IconActivity, theme: 'forest' },
-  ...(NAV_TABS === 4 ? [{ key: 'workouts', title: tr('Тренировки'), Icon: IconWorkout, theme: 'teal' }] : []),
+  { key: 'workouts', title: tr('Тренировки'), Icon: IconWorkout, theme: 'teal' },
   { key: 'profile', title: tr('Профиль'), Icon: IconProfile, theme: 'steel' },
 ];
 const TAB_KEYS = TABS.map((t) => t.key);
@@ -98,6 +98,39 @@ function Main() {
     else pendingRoute.current = route;
   }, []);
 
+  // ИИ-коуч: последний ответ Claude, ключ и состояние запроса
+  // ('' — выключен, 'thinking', 'ok', 'offline', 'error:key' и т. п.).
+  const [coach, setCoach] = useState(null);
+  const coachRef = useRef(null);
+  const [coachState, setCoachState] = useState('');
+  const [hasKey, setHasKey] = useState(false);
+  const keyRef = useRef('');
+  const runCoach = useCallback(async (r, prof, force) => {
+    if (!r || !prof || !prof.aiOnline || !keyRef.current) {
+      setCoachState('');
+      return '';
+    }
+    const cached = coachRef.current;
+    if (!force && cached && cached.computedAt === r.computedAt && cached.ru === RU) {
+      setCoachState('ok');
+      return 'ok';
+    }
+    setCoachState('thinking');
+    try {
+      const a = await askCoach(keyRef.current, coachSummary(r, prof));
+      const c = { text: a.text, at: Date.now(), computedAt: r.computedAt, ru: RU };
+      coachRef.current = c;
+      setCoach(c);
+      saveCoach(c);
+      setCoachState('ok');
+      return 'ok';
+    } catch (e) {
+      const why = coachError(e);
+      setCoachState(why === 'offline' ? 'offline' : 'error:' + why);
+      return why;
+    }
+  }, []);
+
   const load = useCallback(async (prof, g) => {
     setLoading(true);
     setError('');
@@ -107,11 +140,12 @@ function Main() {
       setDataset(ds);
       setResult(r);
       saveResult(r);
+      runCoach(r, prof);
     } catch (e) {
       setError(tr('Ошибка: ') + String((e && e.message) || e));
     }
     setLoading(false);
-  }, []);
+  }, [runCoach]);
 
   // Проверка Health Connect и разрешений, затем загрузка.
   const start = useCallback(async (prof) => {
@@ -151,8 +185,12 @@ function Main() {
   // Старые результаты анализов (раздел удалён) стираем с телефона.
   useEffect(() => {
     purgeLabs();
-    Promise.all([loadProfile(), loadResult(), loadEntries()]).then(([p, r, e]) => {
+    Promise.all([loadProfile(), loadResult(), loadEntries(), loadCoach(), loadApiKey()]).then(([p, r, e, ch, key]) => {
       setProfile(p);
+      coachRef.current = ch;
+      setCoach(ch);
+      keyRef.current = key;
+      setHasKey(!!key);
       if (r) setResult(r);
       entriesRef.current = e;
       setEntries(e);
@@ -176,21 +214,21 @@ function Main() {
       setScreen('log');
     } else if (key.startsWith('detail:') || key.startsWith('workout:')) {
       const [kind, arg] = key.split(':');
-      setDetail({ key: kind === 'workout' ? 'workout' : arg, arg: kind === 'workout' ? +arg : null, from: screen === 'workouts' ? 'workouts' : tab });
+      setDetail({ key: kind === 'workout' ? 'workout' : arg, arg: kind === 'workout' ? +arg : null, from: tab });
       setScreen('detail');
     } else setScreen(key);
   }, [tab, screen]);
 
   const goBack = useCallback(() => {
     if (screen === 'detail') {
-      setScreen(detail && detail.from === 'workouts' && NAV_TABS !== 4 ? 'workouts' : 'home');
+      setScreen('home');
       return true;
     }
     if (screen === 'home' && tab !== 'home') {
       setTab('home');
       return true;
     }
-    if (['debug', 'workouts', 'tips', 'log'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'tips', 'log'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -252,6 +290,20 @@ function Main() {
   };
   const missingAccess = granted.size > 0 && EXTRA_TYPES.some((t) => !granted.has(t));
   const refresh = () => start(profile);
+  // Ключ Claude и включение онлайн-советов (из профиля).
+  const onSaveKey = async (k) => {
+    await saveApiKey(k);
+    keyRef.current = k;
+    setHasKey(!!k);
+    if (!k) setCoachState('');
+  };
+  const onAiToggle = async (on) => {
+    const p = { ...profile, aiOnline: on };
+    await saveQuiet(p);
+    if (on) runCoach(result, p, true);
+    else setCoachState('');
+  };
+  const onTestAi = () => runCoach(result, profile, true);
 
   // Направление перехода: вглубь (подробный экран) — справа, назад к вкладкам — слева;
   // вкладки — со стороны новой вкладки. Считается в момент смены экрана/вкладки.
@@ -294,12 +346,6 @@ function Main() {
             <TipsScreen rec={recommend(result, profile)} onBack={goBack} />
           </ColorsContext.Provider>
         );
-      case 'workouts':
-        return (
-          <ColorsContext.Provider value={THEMES.teal}>
-            <WorkoutsScreen result={result} loading={loading} onOpen={open} onBack={() => setScreen('home')} />
-          </ColorsContext.Provider>
-        );
       case 'detail': {
         const w = detail.key === 'workout' && result && result.series ? result.series.workouts[detail.arg] : null;
         return (
@@ -321,24 +367,15 @@ function Main() {
                   <WorkoutsScreen result={result} loading={loading} onRefresh={refresh} onOpen={open} />
                 ) : tab === 'profile' ? (
                   <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
-                    onSaveProfile={saveQuiet} workoutsInside={NAV_TABS !== 4} />
+                    onSaveProfile={saveQuiet} hasKey={hasKey} onSaveKey={onSaveKey} onAiToggle={onAiToggle}
+                    onTestAi={onTestAi} coachState={coachState} hasResult={!!result} />
                 ) : (
-                  <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh} />
+                  <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh}
+                    coach={coach} coachState={coachState} />
                 )}
               </FadeIn>
             </ColorsContext.Provider>
-            <TabBar
-              tabs={TABS}
-              active={tab}
-              onChange={setTab}
-              bottom={insets.bottom + 8}
-              bg={tabColor(tabAnim, 'card')}
-              pill={tabColor(tabAnim, 'accent')}
-              iconOn={theme.onAccent}
-              iconOff={theme.sub}
-              textOn={theme.text}
-              textOff={theme.sub}
-            />
+            <TabBar tabs={TABS} active={tab} onChange={setTab} bottom={insets.bottom} />
           </Animated.View>
         );
       }

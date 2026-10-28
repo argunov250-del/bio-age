@@ -73,9 +73,8 @@ jobs:
                 'android.permission.health.READ_ACTIVE_CALORIES_BURNED',
                 'android.permission.health.READ_HEALTH_DATA_HISTORY'
               ],
-              // Данные не покидают телефон: у приложения нет даже доступа в интернет.
+              // Интернет нужен только ИИ-коучу (включается в профиле). Остальное убрано.
               blockedPermissions: [
-                'android.permission.INTERNET',
                 'android.permission.SYSTEM_ALERT_WINDOW',
                 'android.permission.READ_EXTERNAL_STORAGE',
                 'android.permission.WRITE_EXTERNAL_STORAGE'
@@ -95,39 +94,24 @@ jobs:
         working-directory: app
         run: |
           npm install
-          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context
+          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-secure-store
+          npm install @anthropic-ai/sdk@1.3.0
 
       - name: Prebuild Android project
         working-directory: app
         run: npx expo prebuild --platform android --no-install
 
-      - name: Build release APK (4 tabs)
+      - name: Build release APK
         working-directory: app/android
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
           mkdir -p ../../out
-          cp app/build/outputs/apk/release/app-release.apk ../../out/bio-age-4tabs.apk
+          cp app/build/outputs/apk/release/app-release.apk ../../out/epimely.apk
 
-      # Второй вариант навигации: те же нативные части, меняется только JS — пересборка быстрая.
-      - name: Build release APK (3 tabs)
-        working-directory: app/android
-        run: |
-          sed -i 's/export const NAV_TABS = 4;/export const NAV_TABS = 3;/' ../lib/layout.js
-          grep -q 'NAV_TABS = 3' ../lib/layout.js
-          ./gradlew assembleRelease --no-daemon
-          cp app/build/outputs/apk/release/app-release.apk ../../out/bio-age-3tabs.apk
-
-      - name: Upload APK (4 tabs)
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: bio-age-apk
-          path: out/bio-age-4tabs.apk
-          if-no-files-found: error
-
-      - name: Upload APK (3 tabs)
-        uses: actions/upload-artifact@v4
-        with:
-          name: bio-age-apk-3tabs
-          path: out/bio-age-3tabs.apk
+          name: epimely-apk
+          path: out/epimely.apk
           if-no-files-found: error
