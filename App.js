@@ -5,7 +5,8 @@ import { ErrorBoundary } from './lib/ErrorScreen';
 import { THEMES, TAB_MS } from './lib/theme';
 import { ColorsContext } from './lib/colors';
 import { tr } from './lib/i18n';
-import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs } from './lib/storage';
+import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries } from './lib/storage';
+import { applyManual } from './lib/manual';
 import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES, EXTRA_TYPES } from './lib/health';
 import { loadDataset, summarize, series, ageAt, HISTORY_DAYS, RECENT_DAYS } from './lib/metrics';
 import { corrections, pace } from './lib/formula';
@@ -26,8 +27,8 @@ import { WorkoutsScreen } from './lib/screens/WorkoutsScreen';
 import { ProfileScreen } from './lib/screens/ProfileScreen';
 import { DetailScreen } from './lib/screens/DetailScreen';
 import { TipsScreen } from './lib/screens/TipsScreen';
+import { LogScreen } from './lib/screens/LogScreen';
 import { recommend } from './lib/recommend';
-import { BreakdownScreen } from './lib/screens/BreakdownScreen';
 import { DebugScreen } from './lib/screens/DebugScreen';
 
 function compute(ds, profile) {
@@ -84,6 +85,9 @@ function Main() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [entries, setEntries] = useState([]);
+  const entriesRef = useRef([]);
+  const [logType, setLogType] = useState(null);
   // Пока идёт приветствие, проверки Health Connect уже работают в фоне;
   // куда идти дальше, запоминаем и переходим, когда приветствие закончится.
   const introDone = useRef(false);
@@ -97,7 +101,7 @@ function Main() {
     setLoading(true);
     setError('');
     try {
-      const ds = await loadDataset(g, prof);
+      const ds = applyManual(await loadDataset(g, prof), entriesRef.current);
       const r = compute(ds, prof);
       setDataset(ds);
       setResult(r);
@@ -113,7 +117,14 @@ function Main() {
     setLoading(true);
     const st = await sdkStatus();
     setSdk(st);
+    // Без Health Connect приложение работает на ручных записях.
+    const manualOnly = () => {
+      setGranted(new Set());
+      go('home');
+      load(prof, new Set());
+    };
     if (st !== 'ok') {
+      if (prof.skipHC) return manualOnly();
       setLoading(false);
       return go('nohc');
     }
@@ -122,6 +133,7 @@ function Main() {
       const g = await grantedTypes();
       setGranted(g);
       if (!RECORD_TYPES.some((t) => g.has(t))) {
+        if (prof.skipHC) return manualOnly();
         setLoading(false);
         return go('permissions');
       }
@@ -138,9 +150,11 @@ function Main() {
   // Старые результаты анализов (раздел удалён) стираем с телефона.
   useEffect(() => {
     purgeLabs();
-    Promise.all([loadProfile(), loadResult()]).then(([p, r]) => {
+    Promise.all([loadProfile(), loadResult(), loadEntries()]).then(([p, r, e]) => {
       setProfile(p);
       if (r) setResult(r);
+      entriesRef.current = e;
+      setEntries(e);
       setReady(true);
       if (p) start(p);
     });
@@ -156,6 +170,9 @@ function Main() {
     if (TAB_KEYS.includes(key)) {
       setTab(key);
       setScreen('home');
+    } else if (key.startsWith('log')) {
+      setLogType(key.split(':')[1] || null);
+      setScreen('log');
     } else if (key.startsWith('detail:') || key.startsWith('workout:')) {
       const [kind, arg] = key.split(':');
       setDetail({ key: kind === 'workout' ? 'workout' : arg, arg: kind === 'workout' ? +arg : null, from: screen === 'workouts' ? 'workouts' : tab });
@@ -172,7 +189,7 @@ function Main() {
       setTab('home');
       return true;
     }
-    if (['breakdown', 'debug', 'workouts', 'tips'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'workouts', 'tips', 'log'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -214,6 +231,24 @@ function Main() {
   };
 
   const back = granted.size ? () => setScreen('home') : undefined;
+
+  // Ручные записи: сохранить и пересчитать.
+  const setAllEntries = (next) => {
+    entriesRef.current = next;
+    setEntries(next);
+    saveEntries(next);
+    start(profile);
+  };
+  const addEntry = (e) => setAllEntries([...entriesRef.current, e]);
+  const deleteEntry = (e) => setAllEntries(entriesRef.current.filter((x) => x.id !== e.id));
+  // Продолжить без Health Connect — только ручные записи.
+  const skipHC = async () => {
+    const p = { ...profile, skipHC: true };
+    await saveProfile(p);
+    setProfile(p);
+    setScreen('home');
+    start(p);
+  };
   const missingAccess = granted.size > 0 && EXTRA_TYPES.some((t) => !granted.has(t));
   const refresh = () => start(profile);
 
@@ -223,13 +258,17 @@ function Main() {
     case 'setup':
       return <SetupScreen profile={profile} onSave={onSaveProfile} onBack={profile ? () => setScreen('home') : undefined} />;
     case 'nohc':
-      return <NoHealthConnectScreen status={sdk} onRetry={refresh} />;
+      return <NoHealthConnectScreen status={sdk} onRetry={refresh} onSkip={skipHC} />;
     case 'permissions':
-      return <PermissionsScreen onRequest={onRequest} onBack={back} busy={loading} granted={[...granted].length} />;
-    case 'breakdown':
-      return <BreakdownScreen result={result} profile={{ age: result.chrono, sex: profile.sex }} onBack={() => setScreen('home')} />;
+      return <PermissionsScreen onRequest={onRequest} onBack={back} busy={loading} granted={[...granted].length} onSkip={granted.size ? undefined : skipHC} />;
     case 'debug':
       return <DebugScreen granted={granted} sdk={sdk} dataset={dataset} onBack={() => setScreen('home')} />;
+    case 'log':
+      return (
+        <ColorsContext.Provider value={THEMES.steel}>
+          <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack} />
+        </ColorsContext.Provider>
+      );
     case 'tips':
       return (
         <ColorsContext.Provider value={THEMES.steel}>
