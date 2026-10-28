@@ -4,7 +4,7 @@
 
 ## Сборка
 
-Пуш в `main` коммита «Update …» (крупное обновление, см. `VERSION.md`) запускает `.github/workflows/build-apk.yml`; мелкие коммиты с метками вроде `i6c5` сборку не запускают. Сборка: создаётся пустой Expo-проект, в него копируются `App.js` и `lib/`, затем `npx expo prebuild --platform android` и `./gradlew assembleRelease`. APK — в артефакте `bio-age-apk` у запуска workflow. Аккаунт Expo не нужен. Expo Go не подойдёт: Health Connect работает только в нативной сборке.
+Пуш в `main` коммита «Update …» (крупное обновление, см. `VERSION.md`) запускает `.github/workflows/build-apk.yml`; мелкие коммиты с метками вроде `i6c5` сборку не запускают. Сборка: создаётся пустой Expo-проект, в него копируются `App.js` и `lib/`, затем `npx expo prebuild --platform android` и `./gradlew assembleRelease`. APK — в артефактах запуска workflow: `bio-age-apk` (4 вкладки) и `bio-age-apk-3tabs` (3 вкладки, анализы внутри «Профиля»). Аккаунт Expo не нужен. Expo Go не подойдёт: Health Connect работает только в нативной сборке.
 
 Плагин Expo для Health Connect с версии 4 встроен в `react-native-health-connect`, отдельный `expo-health-connect` устарел и вместе с ним сборка падает на дублирующемся классе — поэтому подключён только `react-native-health-connect`. `minSdkVersion 26` задаётся через `expo-build-properties`.
 

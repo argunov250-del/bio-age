@@ -5,19 +5,24 @@ import { ErrorBoundary } from './lib/ErrorScreen';
 import { THEMES, TAB_MS } from './lib/theme';
 import { ColorsContext } from './lib/colors';
 import { tr } from './lib/i18n';
-import { loadProfile, saveProfile, loadResult, saveResult } from './lib/storage';
-import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES } from './lib/health';
+import { loadProfile, saveProfile, loadResult, saveResult, loadLabs, saveLabs } from './lib/storage';
+import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES, EXTRA_TYPES } from './lib/health';
 import { loadDataset, summarize, series, ageAt, HISTORY_DAYS, RECENT_DAYS } from './lib/metrics';
 import { corrections, pace } from './lib/formula';
 import { advice } from './lib/advice';
+import { computeMetrics } from './lib/windows';
+import { NAV_TABS } from './lib/layout';
 import { TabBar, FadeIn } from './lib/ui';
-import { IconHome, IconActivity, IconProfile } from './lib/icons';
+import { IconHome, IconActivity, IconProfile, IconLabs } from './lib/icons';
 import { LaunchScreen } from './lib/screens/LaunchScreen';
 import { SetupScreen } from './lib/screens/SetupScreen';
 import { PermissionsScreen } from './lib/screens/PermissionsScreen';
 import { NoHealthConnectScreen } from './lib/screens/NoHealthConnectScreen';
 import { HomeScreen } from './lib/screens/HomeScreen';
-import { ActivityScreen } from './lib/screens/ActivityScreen';
+import { MetricsScreen } from './lib/screens/MetricsScreen';
+import { LabsScreen, LabEntryScreen } from './lib/screens/LabsScreen';
+import { calcEntry } from './lib/clinical';
+import { LifestyleScreen } from './lib/screens/LifestyleScreen';
 import { ProfileScreen } from './lib/screens/ProfileScreen';
 import { BreakdownScreen } from './lib/screens/BreakdownScreen';
 import { DebugScreen } from './lib/screens/DebugScreen';
@@ -40,12 +45,14 @@ function compute(ds, profile) {
   return {
     v180, v30, corr180, corr30, chrono: p.age, bio: p.age + corr180.total, pace: pace(v180, v30, p),
     trend, series: series(ds), advice: advice(v180, corr180, p),
+    metrics: computeMetrics(ds, profile), computedAt: new Date().toISOString(),
   };
 }
 
 const TABS = [
-  { key: 'home', title: tr('Главная'), Icon: IconHome, theme: 'steel' },
-  { key: 'activity', title: tr('Активность'), Icon: IconActivity, theme: 'forest' },
+  { key: 'home', title: tr('Обзор'), Icon: IconHome, theme: 'steel' },
+  { key: 'metrics', title: tr('Метрики'), Icon: IconActivity, theme: 'forest' },
+  ...(NAV_TABS === 4 ? [{ key: 'labs', title: tr('Анализы'), Icon: IconLabs, theme: 'teal' }] : []),
   { key: 'profile', title: tr('Профиль'), Icon: IconProfile, theme: 'plum' },
 ];
 const TAB_KEYS = TABS.map((t) => t.key);
@@ -69,6 +76,8 @@ function Main() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [labs, setLabs] = useState([]);
+  const [labEntry, setLabEntry] = useState(null);
   // Пока идёт приветствие, проверки Health Connect уже работают в фоне;
   // куда идти дальше, запоминаем и переходим, когда приветствие закончится.
   const introDone = useRef(false);
@@ -121,9 +130,10 @@ function Main() {
 
   // Профиль и последний расчёт — сразу при запуске, пока крутится экран загрузки.
   useEffect(() => {
-    Promise.all([loadProfile(), loadResult()]).then(([p, r]) => {
+    Promise.all([loadProfile(), loadResult(), loadLabs()]).then(([p, r, l]) => {
       setProfile(p);
       if (r) setResult(r);
+      setLabs(l);
       setReady(true);
       if (p) start(p);
     });
@@ -139,7 +149,11 @@ function Main() {
       setTab('home');
       return true;
     }
-    if (screen === 'breakdown' || screen === 'debug' || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (screen === 'labEntry') {
+      setScreen(NAV_TABS === 4 ? 'home' : 'labs');
+      return true;
+    }
+    if (['breakdown', 'debug', 'labs', 'lifestyle'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -162,6 +176,12 @@ function Main() {
   const onSaveProfile = async (p) => {
     await saveProfile(p);
     setProfile(p);
+    // Возраст на дату анализов зависит от даты рождения — пересчитываем Clinical BioAge.
+    if (labs.length) {
+      const next = labs.map((e) => ({ ...e, calc: calcEntry(e, p) }));
+      setLabs(next);
+      saveLabs(next);
+    }
     setScreen('home');
     start(p);
   };
@@ -184,6 +204,30 @@ function Main() {
 
   const back = granted.size ? () => setScreen('home') : undefined;
 
+  // Профиль без перезагрузки данных (единицы, образ жизни).
+  const saveQuiet = async (p) => {
+    await saveProfile(p);
+    setProfile(p);
+  };
+  const labsBack = () => setScreen(NAV_TABS === 4 ? 'home' : 'labs');
+  const editLab = (e) => {
+    setLabEntry(e);
+    setScreen('labEntry');
+  };
+  const saveLab = async (e) => {
+    const next = [...labs.filter((x) => x.id !== e.id), e];
+    setLabs(next);
+    await saveLabs(next);
+    labsBack();
+  };
+  const deleteLab = async (e) => {
+    const next = labs.filter((x) => x.id !== e.id);
+    setLabs(next);
+    await saveLabs(next);
+    labsBack();
+  };
+  const missingAccess = granted.size > 0 && EXTRA_TYPES.some((t) => !granted.has(t));
+
   switch (screen) {
     case 'intro':
       return <LaunchScreen ready={ready} firstRun={ready && !profile} onDone={onIntroDone} />;
@@ -197,15 +241,41 @@ function Main() {
       return <BreakdownScreen result={result} profile={{ age: result.chrono, sex: profile.sex }} onBack={() => setScreen('home')} />;
     case 'debug':
       return <DebugScreen granted={granted} sdk={sdk} dataset={dataset} onBack={() => setScreen('home')} />;
+    case 'labs':
+      return (
+        <ColorsContext.Provider value={THEMES.teal}>
+          <LabsScreen labs={labs} onAdd={editLab} onEdit={editLab} onBack={() => setScreen('home')} />
+        </ColorsContext.Provider>
+      );
+    case 'labEntry':
+      return (
+        <ColorsContext.Provider value={THEMES.teal}>
+          <LabEntryScreen entry={labEntry} profile={profile} onSave={saveLab} onDelete={deleteLab} onBack={labsBack} />
+        </ColorsContext.Provider>
+      );
+    case 'lifestyle':
+      return (
+        <ColorsContext.Provider value={THEMES.plum}>
+          <LifestyleScreen profile={profile} onBack={() => setScreen('home')} onSave={async (p) => { await saveQuiet(p); setScreen('home'); }} />
+        </ColorsContext.Provider>
+      );
     default: {
       const theme = THEMES[TABS[tabIndex].theme];
       return (
         <Animated.View style={{ flex: 1, backgroundColor: tabColor(tabAnim, 'bg') }}>
           <ColorsContext.Provider value={theme}>
             <FadeIn key={tab}>
-              {tab === 'activity' ? <ActivityScreen result={result} loading={loading} onRefresh={() => start(profile)} />
-                : tab === 'profile' ? <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={() => start(profile)} />
-                  : <HomeScreen result={result} loading={loading} error={error} onOpen={open} onRefresh={() => start(profile)} />}
+              {tab === 'metrics' ? (
+                <MetricsScreen result={result} profile={profile} loading={loading} onRefresh={() => start(profile)}
+                  missingAccess={missingAccess} onAskAccess={onRequest} />
+              ) : tab === 'labs' ? (
+                <LabsScreen tab labs={labs} onAdd={editLab} onEdit={editLab} />
+              ) : tab === 'profile' ? (
+                <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={() => start(profile)}
+                  onSaveProfile={saveQuiet} labsInside={NAV_TABS !== 4} />
+              ) : (
+                <HomeScreen result={result} loading={loading} error={error} onOpen={open} onRefresh={() => start(profile)} labs={labs} />
+              )}
             </FadeIn>
           </ColorsContext.Provider>
           <TabBar

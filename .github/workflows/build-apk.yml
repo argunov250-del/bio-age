@@ -62,6 +62,13 @@ jobs:
                 'android.permission.health.READ_EXERCISE',
                 'android.permission.health.READ_VO2_MAX',
                 'android.permission.health.READ_LEAN_BODY_MASS',
+                'android.permission.health.READ_HEART_RATE_VARIABILITY',
+                'android.permission.health.READ_BLOOD_PRESSURE',
+                'android.permission.health.READ_OXYGEN_SATURATION',
+                'android.permission.health.READ_WEIGHT',
+                'android.permission.health.READ_HEIGHT',
+                'android.permission.health.READ_BODY_TEMPERATURE',
+                'android.permission.health.READ_RESPIRATORY_RATE',
                 'android.permission.health.READ_HEALTH_DATA_HISTORY'
               ],
               // Данные не покидают телефон: у приложения нет даже доступа в интернет.
@@ -92,15 +99,33 @@ jobs:
         working-directory: app
         run: npx expo prebuild --platform android --no-install
 
-      - name: Build release APK
+      - name: Build release APK (4 tabs)
         working-directory: app/android
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
+          mkdir -p ../../out
+          cp app/build/outputs/apk/release/app-release.apk ../../out/bio-age-4tabs.apk
 
-      - name: Upload APK
+      # Второй вариант навигации: те же нативные части, меняется только JS — пересборка быстрая.
+      - name: Build release APK (3 tabs)
+        working-directory: app/android
+        run: |
+          sed -i 's/export const NAV_TABS = 4;/export const NAV_TABS = 3;/' ../lib/layout.js
+          grep -q 'NAV_TABS = 3' ../lib/layout.js
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk ../../out/bio-age-3tabs.apk
+
+      - name: Upload APK (4 tabs)
         uses: actions/upload-artifact@v4
         with:
           name: bio-age-apk
-          path: app/android/app/build/outputs/apk/release/*.apk
+          path: out/bio-age-4tabs.apk
+          if-no-files-found: error
+
+      - name: Upload APK (3 tabs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bio-age-apk-3tabs
+          path: out/bio-age-3tabs.apk
           if-no-files-found: error
