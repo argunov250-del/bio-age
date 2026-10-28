@@ -69,6 +69,8 @@ jobs:
                 'android.permission.health.READ_HEIGHT',
                 'android.permission.health.READ_BODY_TEMPERATURE',
                 'android.permission.health.READ_RESPIRATORY_RATE',
+                'android.permission.health.READ_DISTANCE',
+                'android.permission.health.READ_ACTIVE_CALORIES_BURNED',
                 'android.permission.health.READ_HEALTH_DATA_HISTORY'
               ],
               // Данные не покидают телефон: у приложения нет даже доступа в интернет.
