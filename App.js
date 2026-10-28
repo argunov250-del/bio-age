@@ -53,7 +53,7 @@ function compute(ds, profile) {
   const metrics = computeMetrics(ds, profile);
   // Цикл — только для женщин и не во время беременности.
   const mode = profile.lifestyle && profile.lifestyle.cycle;
-  const cycle = profile.sex === 'f' && mode !== 'pregnant' ? cycleBase(collectPeriods(ds), mode) : null;
+  const cycle = profile.sex === 'f' && profile.showCycle && mode !== 'pregnant' ? cycleBase(collectPeriods(ds), mode) : null;
   return {
     cycle,
     v180, v30, corr180, corr30, chrono: p.age, bio: p.age + corr180.total, pace: pace(v180, v30, p),
@@ -225,7 +225,7 @@ function Main() {
   const onRequest = async () => {
     setLoading(true);
     try {
-      const g = await askPermissions(profile && profile.sex === 'f');
+      const g = await askPermissions(!!(profile && profile.sex === 'f' && profile.showCycle));
       setGranted(g);
       setLoading(false);
       if (RECORD_TYPES.some((t) => g.has(t))) {
@@ -257,9 +257,16 @@ function Main() {
     setScreen('home');
     start(p);
   };
-  const wanted = profile && profile.sex === 'f' ? [...EXTRA_TYPES, ...CYCLE_TYPES] : EXTRA_TYPES;
+  const wanted = profile && profile.sex === 'f' && profile.showCycle ? [...EXTRA_TYPES, ...CYCLE_TYPES] : EXTRA_TYPES;
   const missingAccess = granted.size > 0 && wanted.some((t) => !granted.has(t));
   const refresh = () => start(profile);
+  // Цикл в профиле: показывать ли на главном и режим — с пересчётом.
+  const onCycleChange = async (patch) => {
+    const p = { ...profile, ...patch };
+    await saveProfile(p);
+    setProfile(p);
+    start(p);
+  };
 
   // Направление перехода: вглубь (подробный экран) — справа, назад к вкладкам — слева;
   // вкладки — со стороны новой вкладки. Считается в момент смены экрана/вкладки.
@@ -332,7 +339,7 @@ function Main() {
                   <WorkoutsScreen result={result} loading={loading} onRefresh={refresh} onOpen={open} />
                 ) : tab === 'profile' ? (
                   <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
-                    onSaveProfile={saveQuiet} />
+                    onSaveProfile={saveQuiet} onCycleChange={onCycleChange} />
                 ) : (
                   <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh} />
                 )}
