@@ -32,6 +32,8 @@ import { LogScreen } from './lib/screens/LogScreen';
 import { CoachScreen } from './lib/screens/CoachScreen';
 import { CycleScreen } from './lib/screens/CycleScreen';
 import { AboutDataScreen } from './lib/screens/AboutDataScreen';
+import { ImportScreen } from './lib/screens/ImportScreen';
+import { loadImported, saveImported } from './lib/importer';
 import { dayKey } from './lib/metrics';
 import { recommend } from './lib/recommend';
 import { DebugScreen } from './lib/screens/DebugScreen';
@@ -106,11 +108,15 @@ function Main() {
     else pendingRoute.current = route;
   }, []);
 
+  // Импорт из Apple Health (файл в памяти приложения): дополняет Health Connect.
+  const importedRef = useRef(null);
+  const [importInfo, setImportInfo] = useState(null);
+
   const load = useCallback(async (prof, g) => {
     setLoading(true);
     setError('');
     try {
-      const ds = applyManual(await loadDataset(g, prof), entriesRef.current);
+      const ds = applyManual(await loadDataset(g, prof, undefined, importedRef.current), entriesRef.current);
       const r = compute(ds, prof);
       setDataset(ds);
       setResult(r);
@@ -159,6 +165,9 @@ function Main() {
   // Старые результаты анализов (раздел удалён) стираем с телефона.
   useEffect(() => {
     purgeLabs();
+    const imp = loadImported();
+    importedRef.current = imp;
+    if (imp) setImportInfo({ at: imp.at, summary: imp.summary });
     Promise.all([loadProfile(), loadResult(), loadEntries()]).then(([p, r, e]) => {
       setProfile(p);
       if (r) setResult(r);
@@ -198,7 +207,7 @@ function Main() {
       setTab('home');
       return true;
     }
-    if (['debug', 'tips', 'log', 'coach', 'cycle', 'about'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'tips', 'log', 'coach', 'cycle', 'about', 'import'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -250,6 +259,32 @@ function Main() {
   };
   const addEntry = (e) => setAllEntries([...entriesRef.current, e]);
   const deleteEntry = (e) => setAllEntries(entriesRef.current.filter((x) => x.id !== e.id));
+  // Импорт: Apple Health, CSV (записи с теми же id заменяются), резервная копия.
+  const setImported = (store) => {
+    saveImported(store);
+    importedRef.current = store;
+    setImportInfo(store ? { at: store.at, summary: store.summary } : null);
+    start(profile);
+  };
+  const addCSV = (list) => {
+    const ids = new Set(list.map((x) => x.id));
+    setAllEntries([...entriesRef.current.filter((x) => !ids.has(x.id)), ...list]);
+  };
+  const backupData = () => ({ profile, entries: entriesRef.current, imported: importedRef.current });
+  const restoreBackup = async (data) => {
+    const p = data.profile || profile;
+    if (data.profile) { await saveProfile(p); setProfile(p); }
+    if (data.imported !== undefined) {
+      saveImported(data.imported);
+      importedRef.current = data.imported;
+      setImportInfo(data.imported ? { at: data.imported.at, summary: data.imported.summary } : null);
+    }
+    const list = Array.isArray(data.entries) ? data.entries : entriesRef.current;
+    entriesRef.current = list;
+    setEntries(list);
+    saveEntries(list);
+    start(p);
+  };
   // Продолжить без Health Connect — только ручные записи.
   const skipHC = async () => {
     const p = { ...profile, skipHC: true };
@@ -302,6 +337,13 @@ function Main() {
         return (
           <ColorsContext.Provider value={THEMES.steel}>
             <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack} />
+          </ColorsContext.Provider>
+        );
+      case 'import':
+        return (
+          <ColorsContext.Provider value={THEMES.steel}>
+            <ImportScreen importInfo={importInfo} entriesCount={entries.length} onApple={setImported} onDeleteApple={() => setImported(null)}
+              onCSV={addCSV} backupData={backupData} onRestore={restoreBackup} onBack={goBack} />
           </ColorsContext.Provider>
         );
       case 'about':
