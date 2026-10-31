@@ -42,6 +42,8 @@ import { ambienceAt, DAY } from './lib/ambience';
 import { scheduleReminders } from './lib/reminders';
 import { setHaptics, tap, success } from './lib/haptics';
 import { setLite, OLD_ANDROID } from './lib/perf';
+import { getWeather } from './lib/weather';
+import { setCoachWeather } from './lib/coachBrain';
 import { loadImported, saveImported } from './lib/importer';
 import { dayKey } from './lib/metrics';
 import { recommend } from './lib/recommend';
@@ -210,11 +212,29 @@ function Main() {
     const id = setInterval(() => setNow(new Date()), 5 * 60000);
     return () => clearInterval(id);
   }, []);
+  // Погода (если включена в профиле): раз в 30 минут, с кэшем; без сети — календарь.
+  const [weather, setWeather] = useState(null);
+  const weatherOn = !!(profile && profile.weather && profile.weather.on);
+  useEffect(() => {
+    if (!weatherOn) { setWeather(null); return; }
+    let alive = true;
+    getWeather(profile.weather).then((w) => { if (alive) setWeather(w); });
+    return () => { alive = false; };
+  }, [weatherOn, profile, now]);
+  useEffect(() => { setCoachWeather(weather); }, [weather]);
   const amb = useMemo(() => {
     const p = profile || {};
     const a = p.ambience === 'day' ? DAY : ambienceAt(now);
-    return { ...a, season: p.seasonFx === false ? null : (a.season || ambienceAt(now).season) };
-  }, [profile, now]);
+    const season = a.season || ambienceAt(now).season;
+    // Эффект: по погоде за окном, а без неё — по сезону.
+    let fx = season;
+    if (weather) {
+      fx = { rain: 'rain', storm: 'storm', snow: 'snow', fog: 'fog', clouds: 'clouds' }[weather.kind]
+        || (!weather.day ? 'stars' : season === 'autumn' ? 'leaves' : season === 'spring' ? 'spring' : null);
+    }
+    const gloomy = weather && ['rain', 'storm', 'fog', 'clouds'].includes(weather.kind);
+    return { ...a, dim: a.dim + (gloomy ? 0.08 : 0), season: p.seasonFx === false ? null : fx };
+  }, [profile, now, weather]);
   const recap = useMemo(() => weekRecap(result, achievements.list), [result, achievements]);
   setLite(profile && profile.lite); // облегчённый режим читается при отрисовке
   useEffect(() => { setHaptics(profile && profile.haptics); }, [profile]);
@@ -340,6 +360,13 @@ function Main() {
     setProfile(p);
     setHaptics(p.haptics);
     if ('remindSleep' in patch || 'remindMorning' in patch) scheduleReminders(p, dataset);
+  };
+  // Погода: включить/выключить, город или геопозиция — и сразу обновить.
+  const onWeather = async (w) => {
+    const p = { ...profile, weather: w };
+    await saveProfile(p);
+    setProfile(p);
+    setWeather(w.on ? await getWeather(w, true) : null);
   };
   const switchTab = (k) => { if (k !== tab) tap(); setTab(k); };
   const deleteEntry = (e) => setAllEntries(entriesRef.current.filter((x) => x.id !== e.id));
@@ -475,10 +502,11 @@ function Main() {
                   <WorkoutsScreen result={result} loading={loading} onRefresh={refresh} onOpen={open} />
                 ) : tab === 'profile' ? (
                   <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
-                    onSaveProfile={saveQuiet} onCycleChange={onCycleChange} onSettings={onSettings} dataset={dataset} oldAndroid={OLD_ANDROID} />
+                    onSaveProfile={saveQuiet} onCycleChange={onCycleChange} onSettings={onSettings} dataset={dataset} oldAndroid={OLD_ANDROID}
+                    weather={weather} onWeather={onWeather} />
                 ) : (
                   <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh}
-                    achievements={achievements.list} amb={amb} recap={recap} planLast={planLast} planFromHC={planFromHC} />
+                    achievements={achievements.list} amb={amb} recap={recap} planLast={planLast} planFromHC={planFromHC} weather={weather} />
                 )}
               </FadeIn>
             </ColorsContext.Provider>
