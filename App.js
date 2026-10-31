@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, StatusBar, Animated, Easing, View } from 'react-native';
+import { BackHandler, StatusBar, Animated, Easing, View, AppState } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './lib/ErrorScreen';
 import { THEMES, TAB_MS } from './lib/theme';
 import { ColorsContext } from './lib/colors';
 import { tr } from './lib/i18n';
-import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries, loadUnlocks, saveUnlocks } from './lib/storage';
+import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries, loadUnlocks, saveUnlocks, addOpen } from './lib/storage';
+import { planEntries, lastPlanNight } from './lib/sleepPlan';
 import { applyManual } from './lib/manual';
 import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES, EXTRA_TYPES, CYCLE_TYPES } from './lib/health';
 import { loadDataset, summarize, series, ageAt, HISTORY_DAYS, RECENT_DAYS } from './lib/metrics';
@@ -123,11 +124,17 @@ function Main() {
   // Достижения: считаются из расчёта, открытые запоминаются с датой.
   const [unlocks, setUnlocks] = useState(null); // null — ещё не прочитаны
 
+  // Открытия приложения — для сна по расписанию (открыл ночью = проснулся).
+  const opensRef = useRef([]);
+  const profileRef = useRef(null);
+
   const load = useCallback(async (prof, g) => {
     setLoading(true);
     setError('');
     try {
-      const ds = applyManual(await loadDataset(g, prof, undefined, importedRef.current), entriesRef.current);
+      // Ручные записи важнее ночей по расписанию; Health Connect важнее и тех, и других.
+      const plan = planEntries(prof && prof.sleepPlan, opensRef.current);
+      const ds = applyManual(await loadDataset(g, prof, undefined, importedRef.current), [...entriesRef.current, ...plan]);
       const r = compute(ds, prof);
       setDataset(ds);
       scheduleReminders(prof, ds);
@@ -181,7 +188,9 @@ function Main() {
     importedRef.current = imp;
     if (imp) setImportInfo({ at: imp.at, summary: imp.summary });
     loadUnlocks().then((u) => setUnlocks(u || {}));
-    Promise.all([loadProfile(), loadResult(), loadEntries()]).then(([p, r, e]) => {
+    Promise.all([loadProfile(), loadResult(), loadEntries(), addOpen()]).then(([p, r, e, opens]) => {
+      opensRef.current = opens;
+      profileRef.current = p;
       setProfile(p);
       if (r) setResult(r);
       entriesRef.current = e;
@@ -255,6 +264,7 @@ function Main() {
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', goBack);
+    profileRef.current = profile;
     return () => sub.remove();
   }, [goBack]);
 
@@ -298,6 +308,32 @@ function Main() {
   };
   const addEntry = (e) => { success(); setAllEntries([...entriesRef.current, e]); };
   // Оформление, вибрация, напоминания — сохраняются сразу, с побочными действиями.
+  // Возврат в приложение: запомнить открытие; если сон по расписанию — пересчитать ночь.
+  useEffect(() => {
+    let prev = AppState.currentState;
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active' && prev !== 'active') {
+        addOpen().then((list) => {
+          opensRef.current = list;
+          const p = profileRef.current;
+          if (p && p.sleepPlan && p.sleepPlan.on && introDone.current) start(p);
+        });
+      }
+      prev = st;
+    });
+    return () => sub.remove();
+  }, [start]);
+  // Сон по расписанию: сохранить и пересчитать.
+  const onSavePlan = async (plan) => {
+    const p = { ...profile, sleepPlan: plan };
+    await saveProfile(p);
+    setProfile(p);
+    success();
+    start(p);
+  };
+  const planLast = profile && profile.sleepPlan && profile.sleepPlan.on ? lastPlanNight(profile.sleepPlan, opensRef.current) : null;
+  // Взят ли сон этой ночи из Health Connect (часы), а не по расписанию.
+  const planFromHC = !!(planLast && dataset && dataset.sleep[planLast.date] && !(dataset.manualKeys && dataset.manualKeys.sleep.has(planLast.date)));
   const onSettings = async (patch) => {
     const p = { ...profile, ...patch };
     await saveProfile(p);
@@ -386,7 +422,8 @@ function Main() {
       case 'log':
         return (
           <ColorsContext.Provider value={THEMES.steel}>
-            <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack} />
+            <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack}
+            plan={profile && profile.sleepPlan} onSavePlan={onSavePlan} />
           </ColorsContext.Provider>
         );
       case 'recap':
@@ -441,7 +478,7 @@ function Main() {
                     onSaveProfile={saveQuiet} onCycleChange={onCycleChange} onSettings={onSettings} dataset={dataset} oldAndroid={OLD_ANDROID} />
                 ) : (
                   <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh}
-                    achievements={achievements.list} amb={amb} recap={recap} />
+                    achievements={achievements.list} amb={amb} recap={recap} planLast={planLast} planFromHC={planFromHC} />
                 )}
               </FadeIn>
             </ColorsContext.Provider>
