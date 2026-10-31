@@ -86,7 +86,7 @@ jobs:
               ...(c.expo.plugins || []),
               'react-native-health-connect',
               // Системный экран — только фон: логотип рисует экран загрузки приложения.
-              ['expo-splash-screen', { image: './assets/splash-blank.png', backgroundColor: '#11212D', imageWidth: 1 }],
+              ['expo-splash-screen', { image: './assets/splash-blank.png', backgroundColor: '#06141B', imageWidth: 1 }],
               ['expo-build-properties', { android: { minSdkVersion: 26 } }]
             ];
             fs.writeFileSync('app.json', JSON.stringify(c, null, 2));
@@ -101,7 +101,11 @@ jobs:
 
       - name: Prebuild Android project
         working-directory: app
-        run: npx expo prebuild --platform android --no-install
+        run: |
+          npx expo prebuild --platform android --no-install
+          # Только ARM (все реальные телефоны, включая старые 32-битные): APK заметно меньше.
+          sed -i 's/^reactNativeArchitectures=.*/reactNativeArchitectures=armeabi-v7a,arm64-v8a/' android/gradle.properties
+          grep -q 'reactNativeArchitectures=armeabi-v7a,arm64-v8a' android/gradle.properties
 
       - name: Build release APK
         working-directory: app/android

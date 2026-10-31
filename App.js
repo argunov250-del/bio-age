@@ -40,6 +40,7 @@ import { weekRecap } from './lib/recap';
 import { ambienceAt, DAY } from './lib/ambience';
 import { scheduleReminders } from './lib/reminders';
 import { setHaptics, tap, success } from './lib/haptics';
+import { setLite, OLD_ANDROID } from './lib/perf';
 import { loadImported, saveImported } from './lib/importer';
 import { dayKey } from './lib/metrics';
 import { recommend } from './lib/recommend';
@@ -96,6 +97,7 @@ function Main() {
     Animated.timing(tabAnim, { toValue: tabIndex, duration: TAB_MS, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }).start();
   }, [tabIndex, tabAnim]);
   const [ready, setReady] = useState(false);
+  const [splash, setSplash] = useState(true);
   const [profile, setProfile] = useState(null);
   const [sdk, setSdk] = useState('');
   const [granted, setGranted] = useState(new Set());
@@ -205,6 +207,7 @@ function Main() {
     return { ...a, season: p.seasonFx === false ? null : (a.season || ambienceAt(now).season) };
   }, [profile, now]);
   const recap = useMemo(() => weekRecap(result, achievements.list), [result, achievements]);
+  setLite(profile && profile.lite); // облегчённый режим читается при отрисовке
   useEffect(() => { setHaptics(profile && profile.haptics); }, [profile]);
 
   useEffect(() => {
@@ -360,11 +363,13 @@ function Main() {
     nav.tabDir = tabIndex > nav.tab ? 1 : -1;
     nav.tab = tabIndex;
   }
-  if (screen === 'intro') return <LaunchScreen ready={ready} firstRun={ready && !profile} onDone={onIntroDone} />;
   const screenKey = screen === 'detail' && detail ? `detail:${detail.key}:${detail.arg}` : screen;
+  // Экран запуска лежит поверх: когда логотип долетел до шапки, под ним уже
+  // открывается главный экран, а запуск растворяется — без чёрной паузы.
   return (
-    <View style={{ flex: 1, backgroundColor: THEMES.steel.bg }}>
-      <ScreenIn key={screenKey} dir={nav.dir}>{renderScreen()}</ScreenIn>
+    <View style={{ flex: 1, backgroundColor: '#06141B' }}>
+      {screen === 'intro' ? null : <ScreenIn key={screenKey} dir={nav.dir}>{renderScreen()}</ScreenIn>}
+      {splash ? <LaunchScreen ready={ready} firstRun={ready && !profile} amb={amb} onReveal={onIntroDone} onDone={() => setSplash(false)} /> : null}
     </View>
   );
 
@@ -433,7 +438,7 @@ function Main() {
                   <WorkoutsScreen result={result} loading={loading} onRefresh={refresh} onOpen={open} />
                 ) : tab === 'profile' ? (
                   <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
-                    onSaveProfile={saveQuiet} onCycleChange={onCycleChange} onSettings={onSettings} dataset={dataset} />
+                    onSaveProfile={saveQuiet} onCycleChange={onCycleChange} onSettings={onSettings} dataset={dataset} oldAndroid={OLD_ANDROID} />
                 ) : (
                   <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh}
                     achievements={achievements.list} amb={amb} recap={recap} />
