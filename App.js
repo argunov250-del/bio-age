@@ -35,6 +35,11 @@ import { AboutDataScreen } from './lib/screens/AboutDataScreen';
 import { ImportScreen } from './lib/screens/ImportScreen';
 import { AchievementsScreen } from './lib/screens/AchievementsScreen';
 import { evaluate, withUnlocks } from './lib/achievements';
+import { RecapScreen } from './lib/screens/RecapScreen';
+import { weekRecap } from './lib/recap';
+import { ambienceAt, DAY } from './lib/ambience';
+import { scheduleReminders } from './lib/reminders';
+import { setHaptics, tap, success } from './lib/haptics';
 import { loadImported, saveImported } from './lib/importer';
 import { dayKey } from './lib/metrics';
 import { recommend } from './lib/recommend';
@@ -123,6 +128,7 @@ function Main() {
       const ds = applyManual(await loadDataset(g, prof, undefined, importedRef.current), entriesRef.current);
       const r = compute(ds, prof);
       setDataset(ds);
+      scheduleReminders(prof, ds);
       setResult(r);
       saveResult(r);
     } catch (e) {
@@ -187,8 +193,23 @@ function Main() {
     () => withUnlocks(evaluate(result, profile, entries, { imported: !!importInfo }), unlocks || {}),
     [result, profile, entries, importInfo, unlocks],
   );
+  // Атмосфера по времени суток и сезону: пересчитывается раз в 5 минут.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 5 * 60000);
+    return () => clearInterval(id);
+  }, []);
+  const amb = useMemo(() => {
+    const p = profile || {};
+    const a = p.ambience === 'day' ? DAY : ambienceAt(now);
+    return { ...a, season: p.seasonFx === false ? null : (a.season || ambienceAt(now).season) };
+  }, [profile, now]);
+  const recap = useMemo(() => weekRecap(result, achievements.list), [result, achievements]);
+  useEffect(() => { setHaptics(profile && profile.haptics); }, [profile]);
+
   useEffect(() => {
     if (!unlocks || !achievements.fresh.length) return; // не перезаписываем даты, пока не прочитаны
+    if (Object.keys(unlocks).length) success(); // вибрация на новое достижение (не при первом запуске)
     setUnlocks(achievements.unlocked);
     saveUnlocks(achievements.unlocked);
   }, [achievements, unlocks]);
@@ -222,7 +243,7 @@ function Main() {
       setTab('home');
       return true;
     }
-    if (['debug', 'tips', 'log', 'coach', 'cycle', 'about', 'import', 'achievements'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'tips', 'log', 'coach', 'cycle', 'about', 'import', 'achievements', 'recap'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -272,7 +293,16 @@ function Main() {
     saveEntries(next);
     start(profile);
   };
-  const addEntry = (e) => setAllEntries([...entriesRef.current, e]);
+  const addEntry = (e) => { success(); setAllEntries([...entriesRef.current, e]); };
+  // Оформление, вибрация, напоминания — сохраняются сразу, с побочными действиями.
+  const onSettings = async (patch) => {
+    const p = { ...profile, ...patch };
+    await saveProfile(p);
+    setProfile(p);
+    setHaptics(p.haptics);
+    if ('remindSleep' in patch || 'remindMorning' in patch) scheduleReminders(p, dataset);
+  };
+  const switchTab = (k) => { if (k !== tab) tap(); setTab(k); };
   const deleteEntry = (e) => setAllEntries(entriesRef.current.filter((x) => x.id !== e.id));
   // Импорт: Apple Health, CSV (записи с теми же id заменяются), резервная копия.
   const setImported = (store) => {
@@ -354,6 +384,8 @@ function Main() {
             <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack} />
           </ColorsContext.Provider>
         );
+      case 'recap':
+        return recap ? <RecapScreen recap={recap} onBack={goBack} /> : null;
       case 'achievements':
         return <ColorsContext.Provider value={THEMES.steel}><AchievementsScreen list={achievements.list} onBack={goBack} /></ColorsContext.Provider>;
       case 'import':
@@ -401,14 +433,14 @@ function Main() {
                   <WorkoutsScreen result={result} loading={loading} onRefresh={refresh} onOpen={open} />
                 ) : tab === 'profile' ? (
                   <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
-                    onSaveProfile={saveQuiet} onCycleChange={onCycleChange} />
+                    onSaveProfile={saveQuiet} onCycleChange={onCycleChange} onSettings={onSettings} dataset={dataset} />
                 ) : (
                   <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh}
-                    achievements={achievements.list} />
+                    achievements={achievements.list} amb={amb} recap={recap} />
                 )}
               </FadeIn>
             </ColorsContext.Provider>
-            <TabBar tabs={TABS} active={tab} onChange={setTab} bottom={insets.bottom} />
+            <TabBar tabs={TABS} active={tab} onChange={switchTab} bottom={insets.bottom} />
           </Animated.View>
         );
       }
