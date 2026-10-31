@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, StatusBar, Animated, Easing, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './lib/ErrorScreen';
 import { THEMES, TAB_MS } from './lib/theme';
 import { ColorsContext } from './lib/colors';
 import { tr } from './lib/i18n';
-import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries } from './lib/storage';
+import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries, loadUnlocks, saveUnlocks } from './lib/storage';
 import { applyManual } from './lib/manual';
 import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES, EXTRA_TYPES, CYCLE_TYPES } from './lib/health';
 import { loadDataset, summarize, series, ageAt, HISTORY_DAYS, RECENT_DAYS } from './lib/metrics';
@@ -33,6 +33,8 @@ import { CoachScreen } from './lib/screens/CoachScreen';
 import { CycleScreen } from './lib/screens/CycleScreen';
 import { AboutDataScreen } from './lib/screens/AboutDataScreen';
 import { ImportScreen } from './lib/screens/ImportScreen';
+import { AchievementsScreen } from './lib/screens/AchievementsScreen';
+import { evaluate, withUnlocks } from './lib/achievements';
 import { loadImported, saveImported } from './lib/importer';
 import { dayKey } from './lib/metrics';
 import { recommend } from './lib/recommend';
@@ -111,6 +113,8 @@ function Main() {
   // Импорт из Apple Health (файл в памяти приложения): дополняет Health Connect.
   const importedRef = useRef(null);
   const [importInfo, setImportInfo] = useState(null);
+  // Достижения: считаются из расчёта, открытые запоминаются с датой.
+  const [unlocks, setUnlocks] = useState(null); // null — ещё не прочитаны
 
   const load = useCallback(async (prof, g) => {
     setLoading(true);
@@ -168,6 +172,7 @@ function Main() {
     const imp = loadImported();
     importedRef.current = imp;
     if (imp) setImportInfo({ at: imp.at, summary: imp.summary });
+    loadUnlocks().then((u) => setUnlocks(u || {}));
     Promise.all([loadProfile(), loadResult(), loadEntries()]).then(([p, r, e]) => {
       setProfile(p);
       if (r) setResult(r);
@@ -177,6 +182,16 @@ function Main() {
       if (p) start(p);
     });
   }, [start]);
+
+  const achievements = useMemo(
+    () => withUnlocks(evaluate(result, profile, entries, { imported: !!importInfo }), unlocks || {}),
+    [result, profile, entries, importInfo, unlocks],
+  );
+  useEffect(() => {
+    if (!unlocks || !achievements.fresh.length) return; // не перезаписываем даты, пока не прочитаны
+    setUnlocks(achievements.unlocked);
+    saveUnlocks(achievements.unlocked);
+  }, [achievements, unlocks]);
 
   const onIntroDone = useCallback(() => {
     introDone.current = true;
@@ -207,7 +222,7 @@ function Main() {
       setTab('home');
       return true;
     }
-    if (['debug', 'tips', 'log', 'coach', 'cycle', 'about', 'import'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'tips', 'log', 'coach', 'cycle', 'about', 'import', 'achievements'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -339,6 +354,8 @@ function Main() {
             <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack} />
           </ColorsContext.Provider>
         );
+      case 'achievements':
+        return <ColorsContext.Provider value={THEMES.steel}><AchievementsScreen list={achievements.list} onBack={goBack} /></ColorsContext.Provider>;
       case 'import':
         return (
           <ColorsContext.Provider value={THEMES.steel}>
@@ -386,7 +403,8 @@ function Main() {
                   <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
                     onSaveProfile={saveQuiet} onCycleChange={onCycleChange} />
                 ) : (
-                  <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh} />
+                  <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh}
+                    achievements={achievements.list} />
                 )}
               </FadeIn>
             </ColorsContext.Provider>
