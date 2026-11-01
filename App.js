@@ -37,7 +37,12 @@ import { weekRecap } from './lib/recap';
 import { ambienceAt, DAY } from './lib/ambience';
 import { scheduleReminders, askNotifications } from './lib/reminders';
 import { checkGoals } from './lib/notify';
-import { syncGoalsTask } from './lib/background'; // импорт регистрирует фоновую задачу (defineTask) на старте, в т.ч. без UI
+
+// Фоновая задача: defineTask должен выполниться при загрузке бандла (в т.ч. при «безголовом» запуске
+// системой), но сбой нативного модуля не должен убить старт приложения — поэтому require в try/catch.
+let background = null;
+try { background = require('./lib/background'); } catch (e) { background = null; }
+const syncGoalsTask = (p) => { try { return background ? background.syncGoalsTask(p) : undefined; } catch (e) { return undefined; } };
 import { setHaptics, tap, success } from './lib/haptics';
 import { setLite, OLD_ANDROID } from './lib/perf';
 import { getWeather } from './lib/weather';

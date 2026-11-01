@@ -29,6 +29,17 @@ test('steps goal and sleep goal today', () => {
   expect(ev.map((e) => e.key)).toEqual(['steps:' + TODAY, 'sleep:' + TODAY]);
 });
 
+test('sleep goal follows the personal norm, falls back to 7 h', () => {
+  const withNorm = (norm, sleep) => ({ ...mk([], sleep), scores: { sleep: { status: 'ok', norm } } });
+  const keys = (r) => goalEvents({}, r, {}, TODAY).map((e) => e.key);
+  expect(keys(withNorm(8.5, [8]))).toEqual([]);
+  expect(keys(withNorm(8.5, [8.6]))).toEqual(['sleep:' + TODAY]);
+  expect(keys(withNorm(6, [6.2]))).toEqual(['sleep:' + TODAY]);
+  expect(keys(withNorm(null, [6.5]))).toEqual([]);
+  expect(keys(withNorm(null, [7]))).toEqual(['sleep:' + TODAY]);
+  expect(keys(withNorm(NaN, [7]))).toEqual(['sleep:' + TODAY]);
+});
+
 test('old data and unmet goals give nothing', () => {
   expect(goalEvents({}, mk([9000, 3000], [8, 5]), {}, TODAY)).toEqual([]);
   expect(goalEvents({}, mk([9000], [8]), {}, '2026-11-02')).toEqual([]);
