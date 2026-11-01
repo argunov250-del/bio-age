@@ -18,6 +18,7 @@ sensitive_red → sensitive_legacy → joke_about_death → control (короч�
 2. Вариант — цельный `V(id, ru, en, {humorOk, pending, when})` для чувствительного/сложного или блочный `BV(id, {reaction, main, explain, action, extra, clarify})` для бытового; блок `[ru, en, ['нужные_переменные']]` пропускается, если данных нет. `{steps7|full}` — значение с единицей в нужном склонении.
 3. Подключить в `scenarios/index.js`; если нужен маршрут — добавить в `route()` engine.js.
 4. Прогнать `checkCatalog()` (тест «целостность каталога»): уникальные id, непустые ru/en, нет точных дублей, известные переменные, у sensitive-сценариев нет юмора.
+Маршрут и рекомендации: группы из `ROUTED_GROUPS` в engine.js (в т.ч. `greeting`, `plan`) выбираются через `match`; поле `recommends:'train'|'today'` у сценария сохраняет рекомендацию для «почему?» (объяснение строит прежняя логика по данным). Помощник `RS` (scenarios/lexA.js) собирает `match` из `phrase` (формулировка), `applies` (условие) и `blocked` (причина блокировки); сценарии, зависящие от памяти/состояния дня (`greet_break`, `greet_same_day`, `train_unknown`), держат примеры в `phrasings`/`notFor`, а не в `positives`. Группы 1–4: greeting.js, plan.js, trainDecision.js (расширение training.js), motivation.js; тесты — __tests__/coachCatalogA.test.js.
 Правила: 4–6 реально разных вариантов (не косметика), минимум один без юмора; при неизменных фактах рекомендация одна и та же; рекомендации — только из существующей логики приложения.
 
 ## Память и неповторяемость

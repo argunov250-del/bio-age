@@ -339,7 +339,7 @@ describe('целостность каталога', () => {
     expect(r.join('|')).toMatch(/variant id: v/); expect(r.join('|')).toMatch(/blank ru/); expect(r.join('|')).toMatch(/scenario id: a/); expect(r.join('|')).toMatch(/no variants/);
   });
   test('все варианты собираются без мусора при полном наборе переменных', () => {
-    const full = buildVars({ steps7: 8000, steps30: 7500, stepGoal: 8000, sleepH: 7.5, sleepNorm: 7.5, sleep7: 7.4, readiness: 75, rhr7: 60, active7: 200, workouts7: 3 }, { status: 'current', kind: 'rain', temp: 8, cond: 'rain', level: 'inconvenient', place: 'Москва', ageMin: 5, at: 1 }, { place: 'gym', activity: 'run' }, { sleep: 5, steps: 7000 }, true);
+    const full = buildVars({ steps7: 8000, steps30: 7500, stepGoal: 8000, sleepH: 7.5, sleepNorm: 7.5, sleepScore: 80, sleep7: 7.4, readiness: 75, rhr7: 60, active7: 200, workouts7: 3 }, { status: 'current', kind: 'rain', temp: 8, cond: 'rain', level: 'inconvenient', place: 'Москва', ageMin: 5, at: 1 }, { place: 'gym', activity: 'run' }, { sleep: 5, steps: 7000 }, true);
     ['savedLabel', 'savedAgo'].forEach((n) => { full[n] = { name: n, value: 'дождь', kind: 'text', available: true }; });
     ['baseTrain', 'dangerWhy', 'wxCond', 'curCond', 'curCondCap', 'askPlace', 'askActivity', 'topicList'].forEach((n) => { full[n] = { name: n, value: 'текст', kind: 'text', available: true }; });
     SCENARIOS.forEach((sc) => sc.variants.forEach((v) => {
