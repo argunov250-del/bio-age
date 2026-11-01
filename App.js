@@ -18,7 +18,7 @@ import { collectPeriods, cycleBase } from './lib/cycle';
 import { buildDetail } from './lib/details';
 import { TabBar, FadeIn } from './lib/ui';
 import { ScreenIn } from './lib/motion';
-import { IconHome, IconActivity, IconProfile, IconWorkout } from './lib/icons';
+import { IconHome, IconActivity, IconProfile, IconWorkout, IconChiron } from './lib/icons';
 import { LaunchScreen } from './lib/screens/LaunchScreen';
 import { SetupScreen } from './lib/screens/SetupScreen';
 import { PermissionsScreen } from './lib/screens/PermissionsScreen';
@@ -80,6 +80,7 @@ function compute(ds, profile) {
 const TABS = [
   { key: 'home', title: tr('Обзор'), Icon: IconHome, theme: 'steel' },
   { key: 'metrics', title: tr('Метрики'), Icon: IconActivity, theme: 'forest' },
+  { key: 'coach', title: tr('Хирон'), Icon: IconChiron, theme: 'steel' },
   { key: 'workouts', title: tr('Тренировки'), Icon: IconWorkout, theme: 'teal' },
   { key: 'profile', title: tr('Профиль'), Icon: IconProfile, theme: 'steel' },
 ];
@@ -275,7 +276,7 @@ function Main() {
       setTab('home');
       return true;
     }
-    if (['debug', 'tips', 'log', 'coach', 'cycle', 'about', 'import', 'achievements', 'recap'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'tips', 'log', 'cycle', 'about', 'import', 'achievements', 'recap'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -473,8 +474,6 @@ function Main() {
               onStartToday={() => addEntry({ id: String(Date.now()), type: 'period', date: dayKey(new Date()), days: (result && result.cycle && result.cycle.periodLen) || 5, t: Date.now() })} />
           </ColorsContext.Provider>
         );
-      case 'coach':
-        return <CoachScreen result={result} profile={profile} onBack={goBack} onTips={() => setScreen('tips')} />;
       case 'tips':
         return (
           <ColorsContext.Provider value={THEMES.steel}>
@@ -495,7 +494,9 @@ function Main() {
           <Animated.View style={{ flex: 1, backgroundColor: tabColor(tabAnim, 'bg') }}>
             <ColorsContext.Provider value={theme}>
               <FadeIn key={tab} dir={nav.tabDir}>
-                {tab === 'metrics' ? (
+                {tab === 'coach' ? (
+                  <CoachScreen result={result} profile={profile} tabbed bottom={insets.bottom} onBack={goBack} onTips={() => setScreen('tips')} />
+                ) : tab === 'metrics' ? (
                   <MetricsScreen result={result} profile={profile} loading={loading} onRefresh={refresh}
                     missingAccess={missingAccess} onAskAccess={onRequest} onOpen={open} />
                 ) : tab === 'workouts' ? (
