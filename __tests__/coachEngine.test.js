@@ -126,7 +126,7 @@ describe('6. почему / проще / другой вариант', () => {
   });
   test('без контекста — коротко уточняет, не угадывает', () => { const r = reply('Почему?', RESULT, {}); expect(j(r)).toMatch(/Про что|Уточни/); });
   test('попроще упрощает прошлый план', () => { const [, s] = chat(['Что мне делать сегодня?', 'А попроще?']); expect(j(s)).toMatch(/прогулк/i); });
-  test('другой вариант — в той же теме', () => { const [, o] = chat(['Как улучшить сон?', 'Другой вариант']); expect(j(o)).toMatch(/свет|дневного/i); });
+  test('другой вариант — в той же теме', () => { const [, o] = chat(['Как улучшить сон?', 'Другой вариант']); expect(j(o)).toMatch(/кофе|свет|дневного|спальн|рычаг|режим/i); });
   test('«ты это уже говорил» признаёт повтор и даёт другое', () => { const [, n] = chat(['Как улучшить сон?', 'Ты это уже говорил']); expect(n.text[0]).toMatch(/повторился|уже было|подмечено/); expect(n.text.length).toBeGreaterThan(1); });
   test('повтори возвращает прошлый ответ', () => { const [a, b] = chat(['Как улучшить сон?', 'повтори']); a.text.forEach((p) => expect(j(b)).toContain(p)); });
   test('да/нет без контекста не угадывают', () => { expect(j(reply('да', RESULT, {}))).toMatch(/на что|тему/); expect(reply('нет', RESULT, {}).text.length).toBeGreaterThan(0); });
@@ -341,7 +341,7 @@ describe('целостность каталога', () => {
   test('все варианты собираются без мусора при полном наборе переменных', () => {
     const full = buildVars({ steps7: 8000, steps30: 7500, stepGoal: 8000, sleepH: 7.5, sleepNorm: 7.5, sleepScore: 80, sleep7: 7.4, readiness: 75, rhr7: 60, active7: 200, workouts7: 3 }, { status: 'current', kind: 'rain', temp: 8, cond: 'rain', level: 'inconvenient', place: 'Москва', ageMin: 5, at: 1 }, { place: 'gym', activity: 'run' }, { sleep: 5, steps: 7000 }, true);
     ['savedLabel', 'savedAgo'].forEach((n) => { full[n] = { name: n, value: 'дождь', kind: 'text', available: true }; });
-    ['baseTrain', 'dangerWhy', 'wxCond', 'curCond', 'curCondCap', 'askPlace', 'askActivity', 'topicList'].forEach((n) => { full[n] = { name: n, value: 'текст', kind: 'text', available: true }; });
+    ['baseTrain', 'dangerWhy', 'wxCond', 'curCond', 'curCondCap', 'askPlace', 'askActivity', 'topicList', 'sleepTips'].forEach((n) => { full[n] = { name: n, value: 'текст', kind: 'text', available: true }; });
     SCENARIOS.forEach((sc) => sc.variants.forEach((v) => {
       const p = assemble(v, { ru: true, vars: full }).paras;
       expect({ id: v.id, ok: validate(p).ok }).toEqual({ id: v.id, ok: true });

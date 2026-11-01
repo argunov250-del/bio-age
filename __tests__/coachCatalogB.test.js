@@ -164,7 +164,7 @@ describe('B4. пересечения с существующими сценар�
     const r = chat(['Сплю мало, шагов мало, вес растёт и стресс на работе. С чего начать?'])[0];
     expect(MINE.map((s) => s.id)).not.toContain(sid(r));
   });
-  test('«Как улучшить сон?» остаётся прежним сценарием сна', () => { const r = one('Как улучшить сон?'); expect(r.topic).toBe('sleep'); expect(MINE.map((s) => s.id)).not.toContain(sid(r)); });
+  test('«Как улучшить сон?» — тема сна, сценарий sleep_improve', () => { const r = one('Как улучшить сон?'); expect(r.topic).toBe('sleep'); expect(sid(r)).toBe('sleep_improve'); });
   test.each([
     ['шаги не обновились', 'data_not_synced'],
     ['Что учитывает приложение?', 'cap_sources'],
@@ -553,6 +553,8 @@ describe('B13. безопасность текста: ни null/NaN/плейсх
   test('все варианты собираются при полном наборе переменных (RU и EN)', () => {
     const full = buildVars({ steps7: 8000, steps30: 7500, stepGoal: 8000, sleepH: 7.5, sleepNorm: 7.5, sleepScore: 80, sleep7: 7.4, readiness: 75, rhr7: 60, active7: 200, workouts7: 3 }, { status: 'none' }, { place: 'gym' }, {}, true);
     const fullEn = buildVars({ steps7: 8000, steps30: 7500, stepGoal: 8000, sleepH: 7.5, sleepNorm: 7.5, sleepScore: 80, sleep7: 7.4, readiness: 75, rhr7: 60, active7: 200, workouts7: 3 }, { status: 'none' }, { place: 'gym' }, {}, false);
+    // переменные движка (не из buildVars)
+    [full, fullEn].forEach((vs) => { vs.sleepTips = { name: 'sleepTips', value: 'tip', kind: 'text', available: true }; });
     MINE.forEach((sc) => sc.variants.forEach((v) => {
       expect({ id: v.id, ok: validate(assemble(v, { ru: true, vars: full }).paras).ok }).toEqual({ id: v.id, ok: true });
       const en = assemble(v, { ru: false, vars: fullEn }).paras.join(' ');

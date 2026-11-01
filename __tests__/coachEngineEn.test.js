@@ -28,6 +28,15 @@ afterEach(() => { setLang('auto'); setCoachWeather(null); jest.restoreAllMocks()
 
 describe('английский: движок', () => {
   beforeEach(() => setLang('en'));
+  test('защитная пауза: после боли «what should I do?» и «should I train?» — без тренировки, с врачом', () => {
+    let session = {};
+    const history = [];
+    const say = (q) => { const r = reply(q, RESULT, {}, { history: history.slice(), session, tone: 'playful' }); session = r.session; history.push({ from: 'me', text: [q] }, { from: 'coach', text: r.text, humorId: r.humorId }); return r; };
+    say('my knee hurts, should I go for a run?');
+    const a = say('what should I do?');
+    const b = say('should I train today?');
+    [a, b].forEach((r) => { expect(j(r)).not.toMatch(/interval|strength session/i); expect(j(r)).toMatch(/doctor/i); expect(r.humorId).toBeNull(); expect(j(r)).not.toMatch(CYR); });
+  });
   test.each(['thanks', 'shorter', 'no jokes', 'ok', 'why', 'Are you a real AI?', 'Do you work offline?', 'there is no data', 'asdfghjk', 'tell me a joke', 'what is the weather like?', 'How do I turn off the jokes?', 'I slept 5 hours', 'what else', 'yes', 'no'])('%s -> без кириллицы', (q) => {
     const r = reply(q, RESULT, {});
     expect(CYR.test(j(r))).toBe(false);
@@ -41,7 +50,7 @@ describe('английский: движок', () => {
   });
   test('все варианты каталога имеют английский текст без кириллицы', () => {
     const full = buildVars({ steps7: 8000, steps30: 7000, stepGoal: 8000, sleepH: 7, sleepNorm: 7, sleepScore: 80, active7: 200, readiness: 70, workouts7: 3, sleep7: 6.5 }, { status: 'current', kind: 'rain', temp: 5, place: 'Oslo', ageMin: 3, at: 1 }, { place: 'gym', activity: 'walk' }, { sleep: 5, steps: 1000 }, false);
-    ['savedLabel', 'savedAgo', 'baseTrain', 'dangerWhy', 'wxCond', 'curCond', 'curCondCap', 'askPlace', 'askActivity', 'topicList'].forEach((n) => { full[n] = { name: n, value: 'text', kind: 'text', available: true }; });
+    ['savedLabel', 'savedAgo', 'baseTrain', 'dangerWhy', 'wxCond', 'curCond', 'curCondCap', 'askPlace', 'askActivity', 'topicList', 'sleepTips'].forEach((n) => { full[n] = { name: n, value: 'text', kind: 'text', available: true }; });
     SCENARIOS.forEach((sc) => sc.variants.forEach((v) => {
       const p = assemble(v, { ru: false, vars: full }).paras;
       expect(p.join(' ')).not.toMatch(CYR); expect(validate(p).ok).toBe(true);
