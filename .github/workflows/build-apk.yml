@@ -76,7 +76,8 @@ jobs:
                 'android.permission.health.READ_DISTANCE',
                 'android.permission.health.READ_ACTIVE_CALORIES_BURNED',
                 'android.permission.health.READ_MENSTRUATION',
-                'android.permission.health.READ_HEALTH_DATA_HISTORY'
+                'android.permission.health.READ_HEALTH_DATA_HISTORY',
+                'android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND'
               ],
               // Интернет — только для погоды (включается в профиле). Фоновая геопозиция не нужна.
               blockedPermissions: [
@@ -100,7 +101,7 @@ jobs:
         working-directory: app
         run: |
           npm install
-          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-document-picker expo-file-system expo-sharing expo-notifications expo-haptics react-native-view-shot expo-location
+          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-document-picker expo-file-system expo-sharing expo-notifications expo-background-task expo-task-manager expo-haptics react-native-view-shot expo-location
           npm install fflate@0.8.3
 
       - name: Prebuild Android project

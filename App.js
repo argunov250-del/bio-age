@@ -4,17 +4,13 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { ErrorBoundary } from './lib/ErrorScreen';
 import { THEMES, TAB_MS } from './lib/theme';
 import { ColorsContext } from './lib/colors';
-import { tr } from './lib/i18n';
+import { tr, RU, setLang } from './lib/i18n';
 import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries, loadUnlocks, saveUnlocks, addOpen, loadDevMode, saveDevMode } from './lib/storage';
 import { planEntries, lastPlanNight } from './lib/sleepPlan';
 import { applyManual } from './lib/manual';
-import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES, EXTRA_TYPES, CYCLE_TYPES } from './lib/health';
-import { loadDataset, summarize, series, ageAt, HISTORY_DAYS, RECENT_DAYS } from './lib/metrics';
-import { corrections, pace } from './lib/formula';
-import { advice } from './lib/advice';
-import { computeMetrics } from './lib/windows';
-import { computeScores } from './lib/scores';
-import { collectPeriods, cycleBase } from './lib/cycle';
+import { sdkStatus, init, grantedTypes, askPermissions, askBackground, RECORD_TYPES, EXTRA_TYPES, CYCLE_TYPES } from './lib/health';
+import { loadDataset } from './lib/metrics';
+import { compute } from './lib/compute';
 import { buildDetail } from './lib/details';
 import { TabBar, FadeIn } from './lib/ui';
 import { ScreenIn } from './lib/motion';
@@ -39,7 +35,9 @@ import { evaluate, withUnlocks } from './lib/achievements';
 import { RecapScreen } from './lib/screens/RecapScreen';
 import { weekRecap } from './lib/recap';
 import { ambienceAt, DAY } from './lib/ambience';
-import { scheduleReminders } from './lib/reminders';
+import { scheduleReminders, askNotifications } from './lib/reminders';
+import { checkGoals } from './lib/notify';
+import { syncGoalsTask } from './lib/background'; // импорт регистрирует фоновую задачу (defineTask) на старте, в т.ч. без UI
 import { setHaptics, tap, success } from './lib/haptics';
 import { setLite, OLD_ANDROID } from './lib/perf';
 import { getWeather } from './lib/weather';
@@ -49,40 +47,13 @@ import { dayKey } from './lib/metrics';
 import { recommend } from './lib/recommend';
 import { DebugScreen } from './lib/screens/DebugScreen';
 
-function compute(ds, profile) {
-  const p = { age: ageAt(profile.birth, ds.now), sex: profile.sex };
-  const v180 = summarize(ds, profile, HISTORY_DAYS);
-  const v30 = summarize(ds, profile, RECENT_DAYS);
-  const corr180 = corrections(v180, p);
-  const corr30 = corrections(v30, p);
-  // Возраст образа жизни по неделям: каждую неделю — по данным за 30 дней до её конца.
-  const trend = [];
-  for (let w = 25; w >= 0; w--) {
-    const end = new Date(ds.now.getTime() - w * 7 * 86400000);
-    const v = summarize(ds, profile, RECENT_DAYS, end);
-    if (!Object.values(v).some((x) => x.ok)) continue;
-    const age = ageAt(profile.birth, end);
-    trend.push({ t: end.getTime(), v: age + corrections(v, { age, sex: profile.sex }).total });
-  }
-  const metrics = computeMetrics(ds, profile);
-  // Цикл — только для женщин и не во время беременности.
-  const mode = profile.lifestyle && profile.lifestyle.cycle;
-  const cycle = profile.sex === 'f' && profile.showCycle && mode !== 'pregnant' ? cycleBase(collectPeriods(ds), mode) : null;
-  return {
-    cycle,
-    v180, v30, corr180, corr30, chrono: p.age, bio: p.age + corr180.total, pace: pace(v180, v30, p),
-    trend, series: series(ds), advice: advice(v180, corr180, p),
-    metrics, scores: computeScores(ds, metrics), computedAt: new Date().toISOString(),
-  };
-}
-
 // Вкладки. «Профиль» — в той же гамме, что «Обзор».
 const TABS = [
-  { key: 'home', title: tr('Обзор'), Icon: IconHome, theme: 'steel' },
-  { key: 'metrics', title: tr('Метрики'), Icon: IconActivity, theme: 'forest' },
-  { key: 'coach', title: tr('Хирон'), Icon: IconChiron, theme: 'steel' },
-  { key: 'workouts', title: tr('Тренировки'), Icon: IconWorkout, theme: 'teal' },
-  { key: 'profile', title: tr('Профиль'), Icon: IconProfile, theme: 'steel' },
+  { key: 'home', get title() { return tr('Обзор'); }, Icon: IconHome, theme: 'steel' },
+  { key: 'metrics', get title() { return tr('Метрики'); }, Icon: IconActivity, theme: 'forest' },
+  { key: 'coach', get title() { return tr('Хирон'); }, Icon: IconChiron, theme: 'steel' },
+  { key: 'workouts', get title() { return tr('Тренировки'); }, Icon: IconWorkout, theme: 'teal' },
+  { key: 'profile', get title() { return tr('Профиль'); }, Icon: IconProfile, theme: 'steel' },
 ];
 const TAB_KEYS = TABS.map((t) => t.key);
 const THEME_OF = Object.fromEntries(TABS.map((t) => [t.key, t.theme]));
@@ -201,12 +172,13 @@ function Main() {
     Promise.all([loadProfile(), loadResult(), loadEntries(), addOpen()]).then(([p, r, e, opens]) => {
       opensRef.current = opens;
       profileRef.current = p;
+      if (p) setLang(p.lang); // язык — до первой отрисовки данных профиля
       setProfile(p);
       if (r) setResult(r);
       entriesRef.current = e;
       setEntries(e);
       setReady(true);
-      if (p) start(p);
+      if (p) { start(p); syncGoalsTask(p); }
     });
   }, [start]);
 
@@ -253,6 +225,13 @@ function Main() {
     setUnlocks(achievements.unlocked);
     saveUnlocks(achievements.unlocked);
   }, [achievements, unlocks]);
+
+  // Уведомления о целях: после каждого расчёта (при первом запуске только запоминаем состояние).
+  useEffect(() => {
+    if (!unlocks || !result) return;
+    const fresh = achievements.list.filter((x) => achievements.fresh.includes(x.id)).map((x) => ({ id: x.id, title: x.title }));
+    checkGoals(profile, result, fresh);
+  }, [result, achievements, unlocks]);
 
   const onIntroDone = useCallback(() => {
     introDone.current = true;
@@ -366,9 +345,17 @@ function Main() {
   const onSettings = async (patch) => {
     const p = { ...profile, ...patch };
     await saveProfile(p);
+    // Язык: переключаем до setProfile, чтобы перерисовка уже шла на новом языке;
+    // тексты расчёта (советы, подписи) пересчитываем, напоминания переставляем.
+    if ('lang' in patch) {
+      setLang(p.lang);
+      if (dataset) { const r = compute(dataset, p); setResult(r); saveResult(r); }
+    }
     setProfile(p);
     setHaptics(p.haptics);
-    if ('remindSleep' in patch || 'remindMorning' in patch) scheduleReminders(p, dataset);
+    if ('remindSleep' in patch || 'remindMorning' in patch || 'lang' in patch) scheduleReminders(p, dataset);
+    if (patch.notifyGoals) askNotifications().then(askBackground); // фон: уведомления, затем фоновое чтение Health Connect
+    if ('notifyGoals' in patch) syncGoalsTask(p);
   };
   // Погода: включить/выключить, город или геопозиция — и сразу обновить.
   const onWeather = async (w) => {
@@ -440,7 +427,7 @@ function Main() {
   // открывается главный экран, а запуск растворяется — без чёрной паузы.
   return (
     <View style={{ flex: 1, backgroundColor: '#06141B' }}>
-      {screen === 'intro' ? null : <ScreenIn key={screenKey} dir={nav.dir}>{renderScreen()}</ScreenIn>}
+      {screen === 'intro' ? null : <ScreenIn key={screenKey + ':' + (RU ? 'ru' : 'en')} dir={nav.dir}>{renderScreen()}</ScreenIn>}
       {splash ? <LaunchScreen ready={ready} firstRun={ready && !profile} amb={amb} onReveal={onIntroDone} onDone={() => setSplash(false)} /> : null}
     </View>
   );
