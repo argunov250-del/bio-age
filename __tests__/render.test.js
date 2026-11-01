@@ -217,3 +217,44 @@ describe.each(cases)('render lang=%s stored=%s', (lang, stored) => {
     }
   });
 });
+
+// Частицы погоды не должны перекрывать карточки: слои идут раньше карточек, без elevation и без касаний.
+describe('weather layers sit behind cards', () => {
+  test('WeatherFall и SeasonLayer: порядок, zIndex, pointerEvents', async () => {
+    jest.resetModules();
+    jest.doMock('react-native', () => makeRN('ru'), { virtual: true });
+    jest.doMock('react-native-svg', () => hostProxy(), { virtual: true });
+    const TR = require('react-test-renderer');
+    const { WeatherFall, SurfaceProvider } = require(path.join(ROOT, 'lib/WeatherFall'));
+    const { SeasonLayer } = require(path.join(ROOT, 'lib/SeasonLayer'));
+    const { Card } = require(path.join(ROOT, 'lib/ui'));
+    const { Glass } = require(path.join(ROOT, 'lib/glass'));
+    let r;
+    await TR.act(async () => {
+      r = TR.create(React.createElement(SurfaceProvider, { register: null },
+        React.createElement('Scroll', null,
+          React.createElement(WeatherFall, { fx: 'rain', registry: null }),
+          React.createElement(Card, null, 'a'),
+          React.createElement(Glass, null, 'b'))));
+    });
+    const kids = r.root.findByType('Scroll').children.map((c) => c.type);
+    const iw = kids.indexOf(WeatherFall);
+    expect(iw).toBe(0);
+    expect(kids.indexOf(Card)).toBeGreaterThan(iw);
+    expect(kids.indexOf(Glass)).toBeGreaterThan(iw);
+    const layer = r.root.findAll((n) => n.props && n.props.testID === 'weather-layer' && typeof n.type === 'string')[0];
+    expect(layer.props.pointerEvents).toBe('none');
+    const flat = RNflat(layer.props.style);
+    expect(flat.zIndex).toBe(0);
+    expect(flat.elevation).toBe(0);
+    for (const season of ['fog', 'stars', 'storm', 'summer']) {
+      let q;
+      await TR.act(async () => { q = TR.create(React.createElement(SeasonLayer, { season })); });
+      for (const n of q.root.findAll((x) => x.props && x.props.testID === 'season-layer' && typeof x.type === 'string')) {
+        expect(n.props.pointerEvents).toBe('none');
+        expect(RNflat(n.props.style).elevation).toBe(0);
+      }
+    }
+  });
+});
+function RNflat(s) { return Array.isArray(s) ? Object.assign({}, ...s.filter(Boolean)) : s || {}; }
