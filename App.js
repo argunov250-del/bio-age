@@ -40,8 +40,9 @@ import { checkGoals } from './lib/notify';
 
 // Фоновая задача: defineTask должен выполниться при загрузке бандла (в т.ч. при «безголовом» запуске
 // системой), но сбой нативного модуля не должен убить старт приложения — поэтому require в try/catch.
-let background = null;
-try { background = require('./lib/background'); } catch (e) { background = null; }
+// Фоновая задача временно выключена: сборка с expo-task-manager/expo-background-task падала при запуске.
+// Чтобы включить: вернуть пакеты в CI и строку `background = require('./lib/background')` в try/catch.
+const background = null;
 const syncGoalsTask = (p) => { try { return background ? background.syncGoalsTask(p) : undefined; } catch (e) { return undefined; } };
 import { setHaptics, tap, success } from './lib/haptics';
 import { setLite, OLD_ANDROID } from './lib/perf';
@@ -359,7 +360,7 @@ function Main() {
     setProfile(p);
     setHaptics(p.haptics);
     if ('remindSleep' in patch || 'remindMorning' in patch || 'lang' in patch) scheduleReminders(p, dataset);
-    if (patch.notifyGoals) askNotifications().then(askBackground); // фон: уведомления, затем фоновое чтение Health Connect
+    if (patch.notifyGoals) askNotifications().then(() => (background ? askBackground() : undefined)); // фон: уведомления, затем фоновое чтение Health Connect
     if ('notifyGoals' in patch) syncGoalsTask(p);
   };
   // Погода: включить/выключить, город или геопозиция — и сразу обновить.
