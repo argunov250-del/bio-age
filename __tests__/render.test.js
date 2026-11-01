@@ -254,6 +254,7 @@ describe('weather layers sit behind cards', () => {
         expect(n.props.pointerEvents).toBe('none');
         expect(RNflat(n.props.style).elevation).toBe(0);
       }
+      await TR.act(async () => { q.unmount(); }); // снимаем таймеры SeasonLayer до конца теста
     }
   });
 });
