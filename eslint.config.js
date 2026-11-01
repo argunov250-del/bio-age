@@ -20,6 +20,7 @@ module.exports = [
     plugins: { react },
     rules: {
       'no-undef': 'error',
+      'no-dupe-keys': 'error',
       'react/jsx-no-undef': 'error',
       'react/jsx-uses-vars': 'error',
       'react/jsx-uses-react': 'error',
