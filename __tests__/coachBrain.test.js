@@ -119,3 +119,12 @@ describe('dailyMessage / analyze', () => {
     expect(answer('today', RESULT, {})).toEqual(answer('today', RESULT, {}));
   });
 });
+
+describe('about intent', () => {
+  const { reply } = require('../lib/coachBrain');
+  test.each(['Расскажи о себе подробнее', 'кто ты', 'tell me about yourself', 'Who are you?'])('%s', (q) => {
+    const r = reply(q, RESULT, {}, { history: [], tone: 'off' });
+    expect(r.topic).toBe('about');
+    expect(r.text.join(' ')).toMatch(/Chiron|Хирон/);
+  });
+});
