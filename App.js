@@ -5,7 +5,7 @@ import { ErrorBoundary } from './lib/ErrorScreen';
 import { THEMES, TAB_MS } from './lib/theme';
 import { ColorsContext } from './lib/colors';
 import { tr } from './lib/i18n';
-import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries, loadUnlocks, saveUnlocks, addOpen } from './lib/storage';
+import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries, loadUnlocks, saveUnlocks, addOpen, loadDevMode, saveDevMode } from './lib/storage';
 import { planEntries, lastPlanNight } from './lib/sleepPlan';
 import { applyManual } from './lib/manual';
 import { sdkStatus, init, grantedTypes, askPermissions, RECORD_TYPES, EXTRA_TYPES, CYCLE_TYPES } from './lib/health';
@@ -129,6 +129,13 @@ function Main() {
 
   // Открытия приложения — для сна по расписанию (открыл ночью = проснулся).
   const opensRef = useRef([]);
+
+  // Отладка скрыта, пока не включён режим разработчика (7 нажатий на версию в профиле) или это dev-сборка.
+  const isDevBuild = typeof __DEV__ !== 'undefined' && !!__DEV__;
+  const [devSaved, setDevSaved] = useState(false);
+  const devMode = isDevBuild || devSaved;
+  useEffect(() => { loadDevMode().then(setDevSaved); }, []);
+  const setDevMode = useCallback((on) => { setDevSaved(on); saveDevMode(on); }, []);
   const profileRef = useRef(null);
 
   const load = useCallback(async (prof, g) => {
@@ -254,6 +261,7 @@ function Main() {
 
   // Открыть вкладку, подробный экран («detail:sleep», «workout:3») или отдельный экран.
   const open = useCallback((key) => {
+    if (key === 'debug' && !devMode) return;
     if (TAB_KEYS.includes(key)) {
       setTab(key);
       setScreen('home');
@@ -265,7 +273,7 @@ function Main() {
       setDetail({ key: kind === 'workout' ? 'workout' : arg, arg: kind === 'workout' ? +arg : null, from: tab });
       setScreen('detail');
     } else setScreen(key);
-  }, [tab, screen]);
+  }, [tab, screen, devMode]);
 
   const goBack = useCallback(() => {
     if (screen === 'detail') {
@@ -446,7 +454,8 @@ function Main() {
       case 'permissions':
         return <PermissionsScreen onRequest={onRequest} onBack={back} busy={loading} granted={[...granted].length} onSkip={granted.size ? undefined : skipHC} />;
       case 'debug':
-        return <DebugScreen granted={granted} sdk={sdk} dataset={dataset} onBack={() => setScreen('home')} />;
+        if (!devMode) return null;
+        return <DebugScreen granted={granted} sdk={sdk} dataset={dataset} onBack={() => setScreen('home')} onHide={isDevBuild ? undefined : () => { setDevMode(false); setScreen('home'); }} />;
       case 'log':
         return (
           <ColorsContext.Provider value={THEMES.steel}>
@@ -504,7 +513,8 @@ function Main() {
                 ) : tab === 'profile' ? (
                   <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
                     onSaveProfile={saveQuiet} onCycleChange={onCycleChange} onSettings={onSettings} dataset={dataset} oldAndroid={OLD_ANDROID}
-                    weather={weather} onWeather={onWeather} />
+                    weather={weather} onWeather={onWeather}
+                    devMode={devMode} onDevUnlock={() => setDevMode(true)} />
                 ) : (
                   <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh}
                     achievements={achievements.list} amb={amb} recap={recap} planLast={planLast} planFromHC={planFromHC} weather={weather} />
