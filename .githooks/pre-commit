@@ -2,3 +2,4 @@
 # Проверка no-undef перед коммитом. Включить: git config core.hooksPath .githooks
 [ -d node_modules ] || npm install --no-audit --no-fund --silent || exit 1
 npm run --silent lint || { echo "Проверка не прошла — коммит отменён"; exit 1; }
+npm test --silent || { echo "Тесты не прошли — коммит отменён"; exit 1; }

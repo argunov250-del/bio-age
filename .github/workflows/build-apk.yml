@@ -30,6 +30,10 @@ jobs:
           npm install --no-audit --no-fund
           npm run lint
 
+      - name: Unit tests
+        working-directory: src
+        run: npm test
+
       - name: Create blank Expo project (latest SDK)
         run: npx --yes create-expo-app@latest app --template blank --no-install
 
