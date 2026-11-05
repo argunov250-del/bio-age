@@ -46,7 +46,7 @@ import { checkGoals } from './lib/notify';
 // Чтобы включить: вернуть пакеты в CI и строку `background = require('./lib/background')` в try/catch.
 const background = null;
 const syncGoalsTask = (p) => { try { return background ? background.syncGoalsTask(p) : undefined; } catch (e) { return undefined; } };
-import { setHaptics, tap, success } from './lib/haptics';
+import { setHaptics, light, success } from './lib/haptics';
 import { setLite, OLD_ANDROID } from './lib/perf';
 import { getWeather } from './lib/weather';
 import { setCoachWeather } from './lib/coachBrain';
@@ -372,7 +372,7 @@ function Main() {
     setProfile(p);
     setWeather(w.on ? await getWeather(w, true) : null);
   };
-  const switchTab = (k) => { if (k !== tab) tap(); setTab(k); };
+  const switchTab = (k) => { if (k !== tab) light(); setTab(k); };
   const deleteEntry = (e) => setAllEntries(entriesRef.current.filter((x) => x.id !== e.id));
   // Импорт: Apple Health, CSV (записи с теми же id заменяются), резервная копия.
   const setImported = (store) => {
