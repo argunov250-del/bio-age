@@ -300,7 +300,7 @@ describe('Growth onboarding', () => {
       while (b && !b.props.onPress) b = b.parent;
       await TR.act(async () => { b.props.onPress(); });
     };
-    const L = lang === 'ru' ? { what: 'Что это', next: 'Далее', go: 'Растём', q: 'Что это?', main: 'Расти вместе с телом' } : { what: 'What is this', next: 'Next', go: "Let's grow", q: 'What is this?', main: 'Grow with your body' };
+    const L = lang === 'ru' ? { what: 'Что это', next: 'Далее', go: 'Начать', q: 'Что это?', main: 'Расти вместе с телом' } : { what: 'What is this', next: 'Next', go: 'Get started', q: 'What is this?', main: 'Grow with your body' };
     let r;
     await TR.act(async () => { r = TR.create(React.createElement(GrowthScreen, { growth: null })); });
     await TR.act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); });
@@ -324,9 +324,9 @@ describe('Growth onboarding', () => {
   });
 });
 
-// Вкладка «Рост»: без данных, с открытыми/закрытыми ступенями и панель «Растём».
+// Вкладка «Рост»: без данных, с открытыми/закрытыми ступенями и списком заданий на экране.
 describe('GrowthScreen', () => {
-  test.each(['ru', 'en'])('рисуется без роста и с ростом, панель открывается (%s)', async (lang) => {
+  test.each(['ru', 'en'])('рисуется без роста и с ростом, список заданий на месте (%s)', async (lang) => {
     jest.resetModules();
     jest.doMock('react-native', () => makeRN(lang), { virtual: true });
     jest.doMock('react-native-svg', () => hostProxy(), { virtual: true });
@@ -355,11 +355,9 @@ describe('GrowthScreen', () => {
     expect(text(r)).toContain('Tier 1');
     expect(text(r)).not.toContain('Tier 3');
     expect(text(r)).not.toContain('Tier 8');
-    let btn = r.root.findAll((n) => n.type === 'Text' && n.props.children === (lang === 'ru' ? 'Растём' : "Let's grow"))[0];
-    while (btn && !btn.props.onPress) btn = btn.parent;
-    await TR.act(async () => { btn.props.onPress(); });
+    expect(text(r)).not.toContain(lang === 'ru' ? 'Растём' : "Let's grow"); // кнопки и панели больше нет
     expect(text(r)).toContain('Steps goal');
-    expect(text(r)).toContain('12 / 50');
+    expect(text(r)).toContain('12 ' + (lang === 'ru' ? 'из' : 'of') + ' 50 XP');
     await TR.act(async () => { r.unmount(); });
     spy.mockRestore();
     expect(errors).toEqual([]);

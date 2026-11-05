@@ -15,7 +15,7 @@ jest.mock('@react-native-async-storage/async-storage', () => {
 
 import * as N from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { goalEvents, planNotifications, checkGoals, notifyNow } from '../lib/notify';
+import { goalEvents, planNotifications, checkGoals, notifyNow, notifyRankUp, MAX_PER_DAY } from '../lib/notify';
 
 const days = (vals, end = '2026-11-01') => {
   const e = Date.UTC(2026, 10, 1);
@@ -139,4 +139,25 @@ test('channels: ids, HIGH importance, sound, vibration; legacy deleted; handler 
   expect(N.deleteNotificationChannelAsync.mock.calls.map((c) => c[0]).sort()).toEqual(['goals', 'reminders']);
   const b = await N.setNotificationHandler.mock.calls[0][0].handleNotification();
   expect(b).toMatchObject({ shouldPlaySound: true, shouldShowBanner: true, shouldShowList: true });
+});
+
+test('notifyRankUp: один раз на ранг, в общем дневном лимите, уважает notifyGoals', async () => {
+  const now = Date.UTC(2026, 10, 3, 12);
+  N.scheduleNotificationAsync.mockClear();
+  AsyncStorage.__m['goalsSent.v1'] = undefined;
+  delete AsyncStorage.__m['goalsSent.v1'];
+  await notifyRankUp({}, { index: 3, name: 'Herbalist' }, now); // состояния ещё нет: ждём первый расчёт
+  expect(N.scheduleNotificationAsync).not.toHaveBeenCalled();
+  await checkGoals({}, mk([1], [1], 40), [], now); // засеять состояние
+  await notifyRankUp({ notifyGoals: false }, { index: 3, name: 'Herbalist' }, now);
+  expect(N.scheduleNotificationAsync).not.toHaveBeenCalled();
+  await notifyRankUp({}, { index: 3, name: 'Herbalist' }, now);
+  expect(N.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(N.scheduleNotificationAsync.mock.calls[0][0])).toContain('Herbalist');
+  await notifyRankUp({}, { index: 3, name: 'Herbalist' }, now); // повтор не шлём
+  expect(N.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+  const st = JSON.parse(AsyncStorage.__m['goalsSent.v1']);
+  st.n = MAX_PER_DAY; AsyncStorage.__m['goalsSent.v1'] = JSON.stringify(st);
+  await notifyRankUp({}, { index: 4, name: 'Archer' }, now); // лимит дня исчерпан
+  expect(N.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
 });

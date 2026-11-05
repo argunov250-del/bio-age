@@ -21,7 +21,10 @@ import { PermissionsScreen } from './lib/screens/PermissionsScreen';
 import { NoHealthConnectScreen } from './lib/screens/NoHealthConnectScreen';
 import { HomeScreen } from './lib/screens/HomeScreen';
 import { GrowthScreen } from './lib/screens/GrowthScreen';
-import { updateGrowth, loadGrowth } from './lib/growth';
+import { updateGrowth, loadGrowth, awardEvent } from './lib/growth';
+import { loadActivities, subscribe as subscribeActivities } from './lib/activities';
+import { useWater } from './lib/useWater';
+import { useDayPlan } from './lib/useDayPlan';
 import { MetricsScreen } from './lib/screens/MetricsScreen';
 import { WorkoutsScreen } from './lib/screens/WorkoutsScreen';
 import { ProfileScreen } from './lib/screens/ProfileScreen';
@@ -38,7 +41,7 @@ import { RecapScreen } from './lib/screens/RecapScreen';
 import { weekRecap } from './lib/recap';
 import { ambienceAt, DAY } from './lib/ambience';
 import { scheduleReminders, askNotifications } from './lib/reminders';
-import { checkGoals } from './lib/notify';
+import { checkGoals, notifyRankUp } from './lib/notify';
 import { applyIcon } from './lib/appIcon';
 
 // Фоновая задача: defineTask должен выполниться при загрузке бандла (в т.ч. при «безголовом» запуске
@@ -113,6 +116,20 @@ function Main() {
   // Рост: уровень, опыт и ступень образа; считается после каждого расчёта.
   const [growth, setGrowth] = useState(null);
   useEffect(() => { let alive = true; Promise.resolve(loadGrowth()).then((g) => { if (alive && g) setGrowth((cur) => cur || g); }).catch(() => {}); return () => { alive = false; }; }, []);
+  // Новый ранг приходит событием расчёта; запоминаем, пока вставку не увидели на вкладке «Рост»,
+  // и шлём одну локальную нотификацию (в лимите уведомлений о целях).
+  const [rankUp, setRankUp] = useState(null);
+  const takeGrowth = useCallback((g) => {
+    if (!g) return;
+    setGrowth(g);
+    const ev = Array.isArray(g.events) ? g.events.find((e) => e && e.type === 'rankUp' && e.rank) : null;
+    if (ev) { setRankUp(ev.rank); notifyRankUp(profileRef.current, ev.rank); }
+  }, []);
+  // Ежедневные активности (вода, витамины, дыхание, пауза): локальные, пересчёт роста после каждого изменения.
+  const [activities, setActivities] = useState({});
+  const resultRef = useRef(null);
+  const [opens, setOpens] = useState(null);
+  const water = useWater(profile);
 
   // Открытия приложения — для сна по расписанию (открыл ночью = проснулся).
   const opensRef = useRef([]);
@@ -187,6 +204,7 @@ function Main() {
     loadUnlocks().then((u) => setUnlocks(u || {}));
     Promise.all([loadProfile(), loadResult(), loadEntries(), addOpen()]).then(([p, r, e, opens]) => {
       opensRef.current = opens;
+      setOpens(opens);
       profileRef.current = p;
       if (p) setLang(p.lang); // язык — до первой отрисовки данных профиля
       setProfile(p);
@@ -247,8 +265,33 @@ function Main() {
     if (!unlocks || !result) return;
     const fresh = achievements.list.filter((x) => achievements.fresh.includes(x.id)).map((x) => ({ id: x.id, title: x.title }));
     checkGoals(profile, result, fresh);
-    Promise.resolve(updateGrowth(result, profile, Date.now(), achievements.fresh)).then((g) => { if (g) setGrowth(g); }).catch(() => {});
+    Promise.resolve(updateGrowth(result, profile, Date.now(), achievements.fresh)).then(takeGrowth).catch(() => {});
   }, [result, achievements, unlocks]);
+  useEffect(() => { resultRef.current = result; }, [result]);
+  // Вода/витамины/дыхание/пауза изменились: обновить карточки и пересчитать опыт (работает и без данных Health Connect).
+  useEffect(() => {
+    let alive = true;
+    let timer = null;
+    loadActivities().then((m) => { if (alive) setActivities(m); }).catch(() => {});
+    const unsub = subscribeActivities((m) => {
+      setActivities(m);
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (!alive) return;
+        Promise.resolve(updateGrowth(resultRef.current, profileRef.current, Date.now(), [])).then((g) => { if (alive) takeGrowth(g); }).catch(() => {});
+      }, 300);
+    });
+    return () => { alive = false; clearTimeout(timer); unsub(); };
+  }, [takeGrowth]);
+  const dayPlan = useDayPlan({
+    result, profile, weather, growth, entries, opens, now,
+    onReward: (r) => { Promise.resolve(awardEvent(r.eventId, r.xp, r.journal)).then(takeGrowth).catch(() => {}); },
+  });
+  const growthView = useMemo(() => {
+    if (!growth || !rankUp || (growth.events || []).some((e) => e && e.type === 'rankUp')) return growth;
+    return { ...growth, events: [...(growth.events || []), { type: 'rankUp', rank: rankUp }] };
+  }, [growth, rankUp]);
+  const noData = !(result && result.series && ((result.series.steps || []).length || (result.series.sleep || []).length));
 
   const onIntroDone = useCallback(() => {
     introDone.current = true;
@@ -342,6 +385,7 @@ function Main() {
       if (st === 'active' && prev !== 'active') {
         addOpen().then((list) => {
           opensRef.current = list;
+          setOpens(list);
           const p = profileRef.current;
           if (p && p.sleepPlan && p.sleepPlan.on && introDone.current) start(p);
         });
@@ -518,20 +562,21 @@ function Main() {
             <ColorsContext.Provider value={theme}>
               <FadeIn key={tab} dir={nav.tabDir}>
                 {tab === 'coach' ? (
-                  <CoachScreen result={result} profile={profile} tabbed bottom={insets.bottom} onBack={goBack} onTips={() => setScreen('tips')} />
+                  <CoachScreen result={result} profile={profile} tabbed bottom={insets.bottom} onBack={goBack} onTips={() => setScreen('tips')} extra={dayPlan.extra} onReply={dayPlan.onReply} />
                 ) : tab === 'metrics' ? (
                   <MetricsScreen result={result} profile={profile} loading={loading} onRefresh={refresh}
                     missingAccess={missingAccess} onAskAccess={onRequest} onOpen={open} />
                 ) : tab === 'growth' ? (
-                  <GrowthScreen growth={growth} amb={amb} />
+                  <GrowthScreen growth={growthView} amb={amb} plan={dayPlan.plan} activities={activities} water={water} noData={noData}
+                    arc={dayPlan.arc} onArcAct={dayPlan.actArc} achievements={achievements.list} />
                 ) : tab === 'profile' ? (
                   <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
                     onSaveProfile={saveQuiet} onCycleChange={onCycleChange} onSettings={onSettings} dataset={dataset} oldAndroid={OLD_ANDROID}
-                    weather={weather} onWeather={onWeather}
+                    weather={weather} onWeather={onWeather} water={water}
                     devMode={devMode} onDevUnlock={() => setDevMode(true)} />
                 ) : (
                   <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh}
-                    achievements={achievements.list} amb={amb} recap={recap} planLast={planLast} planFromHC={planFromHC} weather={weather} growth={growth} />
+                    achievements={achievements.list} amb={amb} recap={recap} planLast={planLast} planFromHC={planFromHC} weather={weather} growth={growth} arc={dayPlan.arc} onArcAct={dayPlan.actArc} />
                 )}
               </FadeIn>
             </ColorsContext.Provider>

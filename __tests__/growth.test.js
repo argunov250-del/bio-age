@@ -7,7 +7,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }), { virtual: true });
 
-import { computeGrowth, updateGrowth, loadGrowth, levelFromXp, xpForLevel, TIERS, DAILY_CAP } from '../lib/growth';
+import { computeGrowth, updateGrowth, loadGrowth, awardEvent, levelFromXp, xpForLevel, TIERS, DAILY_CAP } from '../lib/growth';
 import { setLang } from '../lib/i18n';
 const pad = (n) => (n < 10 ? '0' : '') + n;
 const dayKey = (x) => { const d = new Date(x); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
@@ -179,4 +179,20 @@ test('updateGrowth persists, never throws, loadGrowth reads it', async () => {
   expect(l.xp).toBe(g.xp);
   mem['growth.v1'] = '{bad';
   await expect(updateGrowth({}, {}, now)).resolves.toBeTruthy();
+});
+
+test('awardEvent: награда арки вне потолка, один раз на eventId, строка журнала', async () => {
+  setLang('ru');
+  for (const k of Object.keys(mem)) delete mem[k];
+  const now = new Date(2026, 5, 10, 12).getTime();
+  await updateGrowth(mkResult(dayKey(now), () => ({})), {}, now);
+  const before = JSON.parse(mem['growth.v1']).xp;
+  const g = await awardEvent('arc.tired.2026-06-08', 15, { ru: 'Хирон выспался', en: 'Chiron is well rested' }, now);
+  expect(g.xp).toBe(before + 15);
+  expect(g.today.bonus).toBe(15);
+  const j = g.journal.find((e) => e.type === 'arc');
+  expect(j.text.ru).toBe('Хирон выспался');
+  const g2 = await awardEvent('arc.tired.2026-06-08', 15, null, now);
+  expect(g2.xp).toBe(before + 15);
+  expect(g2.journal.filter((e) => e.type === 'arc').length).toBe(1);
 });
