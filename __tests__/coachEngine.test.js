@@ -311,7 +311,7 @@ describe('18. интерфейс не изменён вне необходимо
     const prof = fs.readFileSync(path.join(__dirname, '..', 'lib', 'screens', 'ProfileScreen.js'), 'utf8');
     expect(prof).toContain('Юмор Хирона'); expect(prof).toContain('Очистить память Хирона'); expect(prof).not.toMatch(/Health ?Connect.*clear/i);
   });
-  test('reply сохраняет прежний контракт полей', () => { expect(Object.keys(reply('Привет', RESULT, {})).sort()).toEqual(['fact', 'humorId', 'next', 'session', 'text', 'topic']); });
+  test('reply сохраняет прежний контракт полей', () => { expect(Object.keys(reply('Привет', RESULT, {})).sort()).toEqual(['consumed', 'fact', 'holdSet', 'humorId', 'next', 'session', 'text', 'topic']); });
 });
 
 describe('20. согласованность рекомендаций между вариантами', () => {
@@ -341,7 +341,7 @@ describe('целостность каталога', () => {
   test('все варианты собираются без мусора при полном наборе переменных', () => {
     const full = buildVars({ steps7: 8000, steps30: 7500, stepGoal: 8000, sleepH: 7.5, sleepNorm: 7.5, sleepScore: 80, sleep7: 7.4, readiness: 75, rhr7: 60, active7: 200, workouts7: 3 }, { status: 'current', kind: 'rain', temp: 8, cond: 'rain', level: 'inconvenient', place: 'Москва', ageMin: 5, at: 1 }, { place: 'gym', activity: 'run' }, { sleep: 5, steps: 7000 }, true);
     ['savedLabel', 'savedAgo'].forEach((n) => { full[n] = { name: n, value: 'дождь', kind: 'text', available: true }; });
-    ['baseTrain', 'dangerWhy', 'wxCond', 'curCond', 'curCondCap', 'askPlace', 'askActivity', 'topicList', 'sleepTips'].forEach((n) => { full[n] = { name: n, value: 'текст', kind: 'text', available: true }; });
+    ['baseTrain', 'dangerWhy', 'wxCond', 'curCond', 'curCondCap', 'askPlace', 'askActivity', 'topicList', 'sleepTips', 'rankName', 'questTitle', 'questWhy'].forEach((n) => { full[n] = { name: n, value: 'текст', kind: 'text', available: true }; });
     SCENARIOS.forEach((sc) => sc.variants.forEach((v) => {
       const p = assemble(v, { ru: true, vars: full }).paras;
       expect({ id: v.id, ok: validate(p).ok }).toEqual({ id: v.id, ok: true });

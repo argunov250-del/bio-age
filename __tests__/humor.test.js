@@ -283,7 +283,7 @@ test('22. воспроизводимость: одинаковые вход, н�
 
 test('контракт reply: поля и ситуации', () => {
   const r = run(Q9980);
-  expect(Object.keys(r).sort()).toEqual(['fact', 'humorId', 'next', 'session', 'text', 'topic']);
+  expect(Object.keys(r).sort()).toEqual(['consumed', 'fact', 'holdSet', 'humorId', 'next', 'session', 'text', 'topic']);
   expect(run('today').topic).toBe('today');
   expect(detect('Передумал, вместо этого отмена').situations).toContain('plan_change');
   expect(detect('Вернулся к пробежкам после перерыва').situations).toContain('return_habit');

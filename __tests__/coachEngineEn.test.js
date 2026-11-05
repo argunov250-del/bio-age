@@ -50,7 +50,7 @@ describe('английский: движок', () => {
   });
   test('все варианты каталога имеют английский текст без кириллицы', () => {
     const full = buildVars({ steps7: 8000, steps30: 7000, stepGoal: 8000, sleepH: 7, sleepNorm: 7, sleepScore: 80, active7: 200, readiness: 70, workouts7: 3, sleep7: 6.5 }, { status: 'current', kind: 'rain', temp: 5, place: 'Oslo', ageMin: 3, at: 1 }, { place: 'gym', activity: 'walk' }, { sleep: 5, steps: 1000 }, false);
-    ['savedLabel', 'savedAgo', 'baseTrain', 'dangerWhy', 'wxCond', 'curCond', 'curCondCap', 'askPlace', 'askActivity', 'topicList', 'sleepTips'].forEach((n) => { full[n] = { name: n, value: 'text', kind: 'text', available: true }; });
+    ['savedLabel', 'savedAgo', 'baseTrain', 'dangerWhy', 'wxCond', 'curCond', 'curCondCap', 'askPlace', 'askActivity', 'topicList', 'sleepTips', 'rankName', 'questTitle', 'questWhy'].forEach((n) => { full[n] = { name: n, value: 'text', kind: 'text', available: true }; });
     SCENARIOS.forEach((sc) => sc.variants.forEach((v) => {
       const p = assemble(v, { ru: false, vars: full }).paras;
       expect(p.join(' ')).not.toMatch(CYR); expect(validate(p).ok).toBe(true);
