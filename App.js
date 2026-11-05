@@ -14,12 +14,14 @@ import { compute } from './lib/compute';
 import { buildDetail } from './lib/details';
 import { TabBar, FadeIn } from './lib/ui';
 import { ScreenIn } from './lib/motion';
-import { IconHome, IconActivity, IconProfile, IconWorkout, IconChiron } from './lib/icons';
+import { IconHome, IconActivity, IconProfile, IconWorkout, IconChiron, IconGrowth } from './lib/icons';
 import { LaunchScreen } from './lib/screens/LaunchScreen';
 import { SetupScreen } from './lib/screens/SetupScreen';
 import { PermissionsScreen } from './lib/screens/PermissionsScreen';
 import { NoHealthConnectScreen } from './lib/screens/NoHealthConnectScreen';
 import { HomeScreen } from './lib/screens/HomeScreen';
+import { GrowthScreen } from './lib/screens/GrowthScreen';
+import { updateGrowth, loadGrowth } from './lib/growth';
 import { MetricsScreen } from './lib/screens/MetricsScreen';
 import { WorkoutsScreen } from './lib/screens/WorkoutsScreen';
 import { ProfileScreen } from './lib/screens/ProfileScreen';
@@ -58,6 +60,7 @@ const TABS = [
   { key: 'home', get title() { return tr('Обзор'); }, Icon: IconHome, theme: 'steel' },
   { key: 'metrics', get title() { return tr('Метрики'); }, Icon: IconActivity, theme: 'forest' },
   { key: 'coach', get title() { return tr('Хирон'); }, Icon: IconChiron, theme: 'steel' },
+  { key: 'growth', get title() { return RU ? 'Рост' : 'Growth'; }, Icon: IconGrowth, theme: 'forest' },
   { key: 'workouts', get title() { return tr('Тренировки'); }, Icon: IconWorkout, theme: 'teal' },
   { key: 'profile', get title() { return tr('Профиль'); }, Icon: IconProfile, theme: 'steel' },
 ];
@@ -103,6 +106,9 @@ function Main() {
   const [importInfo, setImportInfo] = useState(null);
   // Достижения: считаются из расчёта, открытые запоминаются с датой.
   const [unlocks, setUnlocks] = useState(null); // null — ещё не прочитаны
+  // Рост: уровень, опыт и ступень образа; считается после каждого расчёта.
+  const [growth, setGrowth] = useState(null);
+  useEffect(() => { let alive = true; Promise.resolve(loadGrowth()).then((g) => { if (alive && g) setGrowth((cur) => cur || g); }).catch(() => {}); return () => { alive = false; }; }, []);
 
   // Открытия приложения — для сна по расписанию (открыл ночью = проснулся).
   const opensRef = useRef([]);
@@ -237,6 +243,7 @@ function Main() {
     if (!unlocks || !result) return;
     const fresh = achievements.list.filter((x) => achievements.fresh.includes(x.id)).map((x) => ({ id: x.id, title: x.title }));
     checkGoals(profile, result, fresh);
+    Promise.resolve(updateGrowth(result, profile, Date.now(), achievements.fresh)).then((g) => { if (g) setGrowth(g); }).catch(() => {});
   }, [result, achievements, unlocks]);
 
   const onIntroDone = useCallback(() => {
@@ -501,6 +508,8 @@ function Main() {
                 ) : tab === 'metrics' ? (
                   <MetricsScreen result={result} profile={profile} loading={loading} onRefresh={refresh}
                     missingAccess={missingAccess} onAskAccess={onRequest} onOpen={open} />
+                ) : tab === 'growth' ? (
+                  <GrowthScreen growth={growth} amb={amb} />
                 ) : tab === 'workouts' ? (
                   <WorkoutsScreen result={result} loading={loading} onRefresh={refresh} onOpen={open} />
                 ) : tab === 'profile' ? (
@@ -510,7 +519,7 @@ function Main() {
                     devMode={devMode} onDevUnlock={() => setDevMode(true)} />
                 ) : (
                   <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh}
-                    achievements={achievements.list} amb={amb} recap={recap} planLast={planLast} planFromHC={planFromHC} weather={weather} />
+                    achievements={achievements.list} amb={amb} recap={recap} planLast={planLast} planFromHC={planFromHC} weather={weather} growth={growth} />
                 )}
               </FadeIn>
             </ColorsContext.Provider>

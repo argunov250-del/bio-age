@@ -1,4 +1,4 @@
-// Тест первого рендера: App → экран запуска → вкладки (Обзор, Метрики, Хирон, Тренировки, Профиль)
+// Тест первого рендера: App → экран запуска → вкладки (Обзор, Метрики, Хирон, Рост, Тренировки, Профиль)
 // при пустом хранилище и при сохранённых профиле/результате, на ru и en.
 // В релизе исключение при первой отрисовке закрывает приложение, поэтому любое
 // брошенное исключение и любой console.error (функция как child, порядок хуков,
@@ -163,7 +163,7 @@ async function runApp({ lang, stored }) {
   if (stored) {
     const bar = r.root.findAll((n) => n.type === TabBar)[0];
     if (!bar) throw new Error('TabBar не отрисован; экран: ' + seen.start.slice(0, 1500));
-    for (const key of ['metrics', 'coach', 'workouts', 'profile', 'home']) {
+    for (const key of ['metrics', 'coach', 'growth', 'workouts', 'profile', 'home']) {
       const b = r.root.findAll((n) => n.type === TabBar)[0];
       await act(async () => { b.props.onChange(key); });
       await flush(); await flush();
@@ -182,7 +182,7 @@ async function runApp({ lang, stored }) {
     await flush(); await flush();
     seen.switched = texts();
     expect(seen.switched).toContain(other === 'en' ? 'Profile' : 'Профиль');
-    for (const key of ['home', 'metrics', 'coach', 'workouts']) {
+    for (const key of ['home', 'metrics', 'coach', 'growth', 'workouts']) {
       await act(async () => { r.root.findAll((n) => n.type === TabBar)[0].props.onChange(key); });
       await flush();
       texts();
@@ -214,6 +214,7 @@ describe.each(cases)('render lang=%s stored=%s', (lang, stored) => {
       const title = lang === 'ru' ? 'Метрики' : 'Metrics';
       expect(seen.home).toContain(title);
       expect(seen.profile).toBeTruthy();
+      expect(seen.growth).toContain(lang === 'ru' ? 'Расти вместе с телом' : 'Grow with your body');
     }
   });
 });
@@ -259,3 +260,47 @@ describe('weather layers sit behind cards', () => {
   });
 });
 function RNflat(s) { return Array.isArray(s) ? Object.assign({}, ...s.filter(Boolean)) : s || {}; }
+
+
+// Вкладка «Рост»: без данных, с открытыми/закрытыми ступенями и панель «Растём».
+describe('GrowthScreen', () => {
+  test.each(['ru', 'en'])('рисуется без роста и с ростом, панель открывается (%s)', async (lang) => {
+    jest.resetModules();
+    jest.doMock('react-native', () => makeRN(lang), { virtual: true });
+    jest.doMock('react-native-svg', () => hostProxy(), { virtual: true });
+    jest.doMock('react-native-safe-area-context', () => ({ __esModule: true, SafeAreaView: host('SafeAreaView'), useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }), { virtual: true });
+    const errors = [];
+    const spy = jest.spyOn(console, 'error').mockImplementation((...a) => { const m = a.map(String).join(' '); if (!/react-test-renderer is deprecated/.test(m)) errors.push(m); });
+    const TR = require('react-test-renderer');
+    require(path.join(ROOT, 'lib/i18n')).setLang(lang);
+    const { GrowthScreen } = require(path.join(ROOT, 'lib/screens/GrowthScreen'));
+    const { Silhouette } = require(path.join(ROOT, 'lib/Silhouette'));
+    const tiers = Array.from({ length: 9 }, (_, i) => ({ id: 't' + i, name: 'Tier ' + i, description: '', minLevel: i * 10, unlocked: i < 3, progress: i < 3 ? 1 : 0.4 }));
+    const growth = { level: 22, xp: 900, xpInLevel: 20, xpToNext: 60, progress: 0.25, maxed: false,
+      today: { xp: 12, cap: 50, sources: [{ id: 'steps', label: 'Steps goal', xp: 12, done: true }, { id: 'sleep', label: 'Sleep', xp: 12, done: false }] },
+      tier: { id: 't2', name: 'Tier 2', minLevel: 20, index: 2 }, tiers, startedAt: 0 };
+    const text = (r) => JSON.stringify(r.toJSON());
+    let r;
+    await TR.act(async () => { r = TR.create(React.createElement(GrowthScreen, { growth: null })); });
+    expect(text(r)).toContain(lang === 'ru' ? 'Расти вместе с телом' : 'Grow with your body');
+    await TR.act(async () => { r.update(React.createElement(GrowthScreen, { growth })); });
+    expect(text(r)).toContain('22 lvl');
+    expect(text(r)).toContain(lang === 'ru' ? 'с 30 уровня' : 'from level 30');
+    expect(r.root.findAllByType(Silhouette).length).toBe(10);
+    let btn = r.root.findAll((n) => n.type === 'Text' && n.props.children === (lang === 'ru' ? 'Растём' : "Let's grow"))[0];
+    while (btn && !btn.props.onPress) btn = btn.parent;
+    await TR.act(async () => { btn.props.onPress(); });
+    expect(text(r)).toContain('Steps goal');
+    expect(text(r)).toContain('12 / 50');
+    await TR.act(async () => { r.unmount(); });
+    spy.mockRestore();
+    expect(errors).toEqual([]);
+    // Все ступени силуэта рисуются, число частиц ограничено.
+    for (let t = 0; t <= 8; t++) {
+      let q;
+      await TR.act(async () => { q = TR.create(React.createElement(Silhouette, { height: 200, tier: t, intro: true })); });
+      expect(q.root.findAll((n) => n.type === 'Circle').length).toBeLessThanOrEqual(600);
+      await TR.act(async () => { q.unmount(); });
+    }
+  });
+});
