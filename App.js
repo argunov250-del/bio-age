@@ -359,7 +359,7 @@ function Main() {
     }
     setProfile(p);
     setHaptics(p.haptics);
-    if ('remindSleep' in patch || 'remindMorning' in patch || 'lang' in patch) scheduleReminders(p, dataset);
+    if ('remindSleep' in patch || 'remindMorning' in patch || 'lang' in patch) scheduleReminders(p, dataset, { ask: !!(patch.remindSleep || patch.remindMorning) });
     if (patch.notifyGoals) askNotifications().then(() => (background ? askBackground() : undefined)); // фон: уведомления, затем фоновое чтение Health Connect
     if ('notifyGoals' in patch) syncGoalsTask(p);
   };

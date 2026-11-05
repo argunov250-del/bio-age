@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     # APK собирается при пуше с префиксом «Update» / «Fix» или вручную через Run workflow.
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event_head_commit.message, 'Update') || startsWith(github.event_head_commit.message, 'Fix')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'Update') || startsWith(github.event.head_commit.message, 'Fix')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -61,8 +61,6 @@ jobs:
               permissions: [
                 'android.permission.POST_NOTIFICATIONS',
                 'android.permission.RECEIVE_BOOT_COMPLETED',
-                'android.permission.SCHEDULE_EXACT_ALARM',
-                'android.permission.USE_EXACT_ALARM',
                 'android.permission.VIBRATE',
                 'android.permission.WAKE_LOCK',
                 'android.permission.health.READ_STEPS',
@@ -82,8 +80,7 @@ jobs:
                 'android.permission.health.READ_DISTANCE',
                 'android.permission.health.READ_ACTIVE_CALORIES_BURNED',
                 'android.permission.health.READ_MENSTRUATION',
-                'android.permission.health.READ_HEALTH_DATA_HISTORY',
-                'android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND'
+                'android.permission.health.READ_HEALTH_DATA_HISTORY'
               ],
               // Интернет — только для погоды (включается в профиле). Фоновая геопозиция не нужна.
               blockedPermissions: [

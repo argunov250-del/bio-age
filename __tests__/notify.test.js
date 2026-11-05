@@ -1,8 +1,11 @@
 jest.mock('expo-notifications', () => ({
   getPermissionsAsync: jest.fn(async () => ({ granted: true })),
+  requestPermissionsAsync: jest.fn(async () => ({ granted: true })),
+  setNotificationHandler: jest.fn(),
+  deleteNotificationChannelAsync: jest.fn(async () => {}),
   scheduleNotificationAsync: jest.fn(async () => 'id'),
   setNotificationChannelAsync: jest.fn(async () => {}),
-  AndroidImportance: { DEFAULT: 3 },
+  AndroidImportance: { DEFAULT: 3, HIGH: 4 },
 }), { virtual: true });
 jest.mock('react-native', () => ({ Platform: { OS: 'android' } }), { virtual: true });
 jest.mock('@react-native-async-storage/async-storage', () => {
@@ -112,4 +115,28 @@ test('checkGoals persists and sends; respects notifyGoals=false and permission',
   expect(N.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
   N.getPermissionsAsync.mockResolvedValueOnce({ granted: false });
   expect(await notifyNow('z', 't', 'b')).toBe(false);
+});
+
+test('goal notifications use the v2 channel with sound; old channels are deleted; no permission prompt', async () => {
+  N.scheduleNotificationAsync.mockClear();
+  expect(await notifyNow('k', 't', 'b')).toBe(true);
+  const call = N.scheduleNotificationAsync.mock.calls[0][0];
+  expect(call.identifier).toBe('goal-k');
+  expect(call.content.sound).toBe('default');
+  expect(call.trigger).toEqual({ channelId: 'goals-v2' });
+  N.getPermissionsAsync.mockResolvedValueOnce({ granted: false });
+  expect(await notifyNow('k2', 't', 'b')).toBe(false);
+  expect(N.requestPermissionsAsync).not.toHaveBeenCalled();
+});
+
+test('channels: ids, HIGH importance, sound, vibration; legacy deleted; handler plays sound', async () => {
+  const ch = require('../lib/channels');
+  await ch.ensureChannels();
+  const created = Object.fromEntries(N.setNotificationChannelAsync.mock.calls.map(([id, o]) => [id, o]));
+  for (const id of ['goals-v2', 'reminders-v2']) {
+    expect(created[id]).toMatchObject({ importance: 4, sound: 'default', enableVibrate: true });
+  }
+  expect(N.deleteNotificationChannelAsync.mock.calls.map((c) => c[0]).sort()).toEqual(['goals', 'reminders']);
+  const b = await N.setNotificationHandler.mock.calls[0][0].handleNotification();
+  expect(b).toMatchObject({ shouldPlaySound: true, shouldShowBanner: true, shouldShowList: true });
 });
