@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, StatusBar, View, AppState } from 'react-native';
+import { BackHandler, StatusBar, View, AppState, Appearance } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './lib/ErrorScreen';
-import { applyTheme } from './lib/theme';
+import { applyTheme, resolveTheme } from './lib/theme';
 import { ColorsContext } from './lib/colors';
 import { tr, RU, setLang } from './lib/i18n';
 import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries, loadUnlocks, saveUnlocks, addOpen, loadDevMode, saveDevMode } from './lib/storage';
@@ -54,6 +54,7 @@ import { setCoachWeather } from './lib/coachBrain';
 import { loadImported, saveImported } from './lib/importer';
 import { dayKey } from './lib/metrics';
 import { recommend } from './lib/recommend';
+import { setChironOpener } from './lib/chiron';
 import { DebugScreen } from './lib/screens/DebugScreen';
 
 // Вкладки; «Хирон» — центральная круглая кнопка панели.
@@ -77,7 +78,14 @@ function Main() {
   const [splash, setSplash] = useState(true);
   const [profile, setProfile] = useState(null);
   // Тема (светлая/тёмная) из профиля: применяется сразу, на всём дереве (ключ ниже перерисовывает экраны).
-  const themeName = profile && profile.theme === 'dark' ? 'dark' : 'light';
+  const [sysScheme, setSysScheme] = useState(() => { try { return Appearance.getColorScheme(); } catch (e) { return 'light'; } });
+  useEffect(() => {
+    try {
+      const sub = Appearance.addChangeListener(({ colorScheme }) => setSysScheme(colorScheme));
+      return () => { try { sub && sub.remove && sub.remove(); } catch (e) {} };
+    } catch (e) { return undefined; }
+  }, []);
+  const themeName = resolveTheme(profile && profile.theme, sysScheme);
   const colors = applyTheme(themeName);
   const [sdk, setSdk] = useState('');
   const [granted, setGranted] = useState(new Set());
@@ -262,6 +270,8 @@ function Main() {
       setScreen('detail');
     } else setScreen(key);
   }, [tab, screen, devMode]);
+
+  useEffect(() => { setChironOpener(() => open('coach')); return () => setChironOpener(null); }, [open]);
 
   const goBack = useCallback(() => {
     if (screen === 'detail') {

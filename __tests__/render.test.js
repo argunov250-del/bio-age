@@ -352,6 +352,9 @@ describe('GrowthScreen', () => {
     expect(text(r)).toContain('22 lvl');
     expect(text(r)).toContain(lang === 'ru' ? 'с 30 уровня' : 'from level 30');
     expect(r.root.findAllByType(Silhouette).length).toBe(10);
+    expect(text(r)).toContain('Tier 1');
+    expect(text(r)).not.toContain('Tier 3');
+    expect(text(r)).not.toContain('Tier 8');
     let btn = r.root.findAll((n) => n.type === 'Text' && n.props.children === (lang === 'ru' ? 'Растём' : "Let's grow"))[0];
     while (btn && !btn.props.onPress) btn = btn.parent;
     await TR.act(async () => { btn.props.onPress(); });

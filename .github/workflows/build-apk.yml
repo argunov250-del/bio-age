@@ -53,9 +53,11 @@ jobs:
             c.expo.name = 'Epimely';
             c.expo.slug = 'bio-age';
             c.expo.icon = './assets/icon.png';
+            c.expo.userInterfaceStyle = 'automatic';
             c.expo.android = {
               ...(c.expo.android || {}),
               package: 'com.bioage.proto',
+              userInterfaceStyle: 'automatic',
               adaptiveIcon: {
                 foregroundImage: './assets/adaptive-icon.png',
                 monochromeImage: './assets/adaptive-icon-mono.png',
@@ -110,7 +112,7 @@ jobs:
         working-directory: app
         run: |
           npm install
-          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-document-picker expo-file-system expo-sharing expo-notifications expo-haptics react-native-view-shot expo-location expo-alternate-app-icons
+          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-document-picker expo-file-system expo-sharing expo-notifications expo-haptics react-native-view-shot expo-location expo-alternate-app-icons expo-system-ui
           npm install fflate@0.8.3
 
       - name: Prebuild Android project
