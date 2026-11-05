@@ -85,7 +85,9 @@ jobs:
                 'android.permission.health.READ_DISTANCE',
                 'android.permission.health.READ_ACTIVE_CALORIES_BURNED',
                 'android.permission.health.READ_MENSTRUATION',
-                'android.permission.health.READ_HEALTH_DATA_HISTORY'
+                'android.permission.health.READ_HEALTH_DATA_HISTORY',
+                'android.permission.health.READ_HYDRATION',
+                'android.permission.health.WRITE_HYDRATION'
               ],
               // Интернет — только для погоды (включается в профиле). Фоновая геопозиция не нужна.
               blockedPermissions: [

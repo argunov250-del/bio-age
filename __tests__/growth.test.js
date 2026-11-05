@@ -34,9 +34,11 @@ afterAll(() => setLang('auto'));
 test('first run: today counts immediately, previous days ignored', () => {
   const r = mkResult(KEY0, (k) => (k === KEY0 ? GOOD : { steps: 20000, sleep: 9, workout: true }));
   const { state, growth } = computeGrowth(null, r, {}, KEY0, [], [{ date: KEY0, type: 'weight' }]);
-  expect(growth.xp).toBe(12 + 12 + 10 + 4); // вчерашние дни не дают XP
+  expect(growth.xp).toBe(9 + 12 + 10 + 4); // вчерашние дни не дают XP; 9000 шагов = 9 XP
   expect(growth.xp).toBeGreaterThan(0);
   expect(growth.today.sources.filter((x) => x.done).length).toBe(4);
+  expect(growth.today.sources.find((x) => x.id === 'workout').optional).toBe(true);
+  expect(growth.today.sources.find((x) => x.id === 'achievement')).toBeUndefined();
   // повторный расчёт в тот же день не удваивает
   expect(computeGrowth(state, r, {}, KEY0, [], [{ date: KEY0, type: 'weight' }]).growth.xp).toBe(growth.xp);
   // новый день — идёт XP
@@ -51,9 +53,9 @@ test('first run without goals met: 0 XP, then grows during the day', () => {
   expect(first.growth.xp).toBe(0);
   expect(first.growth.level).toBe(0);
   const later = computeGrowth(first.state, mkResult(KEY0, (k) => (k === KEY0 ? { steps: 9000 } : GOOD)), {}, KEY0);
-  expect(later.growth.xp).toBe(12);
+  expect(later.growth.xp).toBe(9);
   const more = computeGrowth(later.state, mkResult(KEY0, (k) => (k === KEY0 ? { steps: 9000, sleep: 8 } : GOOD)), {}, KEY0);
-  expect(more.growth.xp).toBe(24);
+  expect(more.growth.xp).toBe(21);
 });
 
 test('same day is not double counted; late yesterday data counts once', () => {
@@ -62,7 +64,7 @@ test('same day is not double counted; late yesterday data counts once', () => {
   const only = (key) => (k) => (k === key ? { steps: 9000 } : {});
   let a = computeGrowth(state, mkResult(d1, only(d1)), {}, d1);
   const xp1 = a.growth.xp;
-  expect(xp1).toBe(12);
+  expect(xp1).toBe(9);
   a = computeGrowth(a.state, mkResult(d1, only(d1)), {}, d1);
   expect(a.growth.xp).toBe(xp1);
   // следующий день: данные за вчера пришли позже (сон) — засчитываются один раз
@@ -79,8 +81,10 @@ test('daily cap', () => {
   const fresh = ['a', 'b', 'c', 'd', 'e'];
   const entries = [{ date: d1, type: 'weight' }];
   const out = computeGrowth(state, mkResult(d1, (k) => (k === d1 ? GOOD : {})), {}, d1, fresh, entries);
-  expect(out.growth.xp).toBe(DAILY_CAP);
-  expect(out.growth.today.xp).toBe(DAILY_CAP);
+  // достижения вне потолка: 35 за день + 5 × 25 событий
+  expect(out.growth.today.xp).toBe(35);
+  expect(out.growth.today.bonus).toBe(125);
+  expect(out.growth.xp).toBe(35 + 125);
   expect(out.growth.today.cap).toBe(DAILY_CAP);
   expect(out.growth.today.sources.every((s) => typeof s.label === 'string' && s.label)).toBe(true);
 });
@@ -146,7 +150,7 @@ test('no NaN with empty or broken result', () => {
     const b = computeGrowth(a.state, r, null, shift(KEY0, 1), ['x'], [null, {}]);
     const bad = JSON.stringify(b.growth, (k, v) => (typeof v === 'number' && !isFinite(v) ? '__NaN__' : v));
     expect(bad).not.toContain('__NaN__');
-    expect(b.growth.xp).toBeLessThanOrEqual(DAILY_CAP);
+    expect(b.growth.today.xp).toBeLessThanOrEqual(DAILY_CAP);
   }
 });
 
