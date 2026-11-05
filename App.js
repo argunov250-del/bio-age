@@ -39,6 +39,7 @@ import { weekRecap } from './lib/recap';
 import { ambienceAt, DAY } from './lib/ambience';
 import { scheduleReminders, askNotifications } from './lib/reminders';
 import { checkGoals } from './lib/notify';
+import { applyIcon } from './lib/appIcon';
 
 // Фоновая задача: defineTask должен выполниться при загрузке бандла (в т.ч. при «безголовом» запуске
 // системой), но сбой нативного модуля не должен убить старт приложения — поэтому require в try/catch.
@@ -364,6 +365,7 @@ function Main() {
     if ('remindSleep' in patch || 'remindMorning' in patch || 'lang' in patch) scheduleReminders(p, dataset, { ask: !!(patch.remindSleep || patch.remindMorning) });
     if (patch.notifyGoals) askNotifications().then(() => (background ? askBackground() : undefined)); // фон: уведомления, затем фоновое чтение Health Connect
     if ('notifyGoals' in patch) syncGoalsTask(p);
+    if ('appIcon' in patch) applyIcon(patch.appIcon);
   };
   // Погода: включить/выключить, город или геопозиция — и сразу обновить.
   const onWeather = async (w) => {
