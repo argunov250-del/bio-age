@@ -75,7 +75,7 @@ function makeDataset() {
   return ds;
 }
 
-async function runApp({ lang, stored }) {
+async function runApp({ lang, stored, theme }) {
   jest.resetModules();
   jest.useFakeTimers();
   const store = new Map();
@@ -128,7 +128,7 @@ async function runApp({ lang, stored }) {
 
   const { compute } = require(path.join(ROOT, 'lib/compute'));
   if (stored) {
-    store.set('profile.v1', JSON.stringify({ ...PROFILE, lang }));
+    store.set('profile.v1', JSON.stringify({ ...PROFILE, lang, ...(theme ? { theme } : null) }));
     store.set('result.v2', JSON.stringify(compute(makeDataset(), PROFILE)));
   }
   const errors = [];
@@ -199,6 +199,20 @@ async function runApp({ lang, stored }) {
   jest.useRealTimers();
   return { errors, seen };
 }
+
+// Обе темы: светлая (по умолчанию) и тёмная рисуют все вкладки без ошибок; переключение в профиле — на лету.
+describe.each(['light', 'dark'])('theme=%s', (theme) => {
+  test('вкладки отрисованы, тема применена и переключается', async () => {
+    const { errors, seen } = await runApp({ lang: 'ru', stored: true, theme });
+    expect(errors).toEqual([]);
+    for (const k of ['home', 'metrics', 'coach', 'growth', 'profile']) expect(seen[k].length).toBeGreaterThan(10);
+    expect(seen.profile).toContain('Тема');
+    const T = require(path.join(ROOT, 'lib/theme'));
+    expect(T.THEMES[theme].bg).toBe(theme === 'dark' ? '#0E0F11' : '#EEF0F3');
+    expect(T.COLORS.name).toBe(theme);
+    expect(T.THEMES.steel.name).toBe(theme); // старые имена тем следуют текущей
+  });
+});
 
 const cases = [];
 for (const lang of ['ru', 'en']) for (const stored of [false, true]) cases.push([lang, stored]);

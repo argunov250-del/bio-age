@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, StatusBar, Animated, Easing, View, AppState } from 'react-native';
+import { BackHandler, StatusBar, View, AppState } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './lib/ErrorScreen';
-import { THEMES, TAB_MS } from './lib/theme';
+import { applyTheme } from './lib/theme';
 import { ColorsContext } from './lib/colors';
 import { tr, RU, setLang } from './lib/i18n';
 import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries, loadUnlocks, saveUnlocks, addOpen, loadDevMode, saveDevMode } from './lib/storage';
@@ -55,18 +55,15 @@ import { dayKey } from './lib/metrics';
 import { recommend } from './lib/recommend';
 import { DebugScreen } from './lib/screens/DebugScreen';
 
-// Вкладки. «Профиль» — в той же гамме, что «Обзор».
+// Вкладки; «Хирон» — центральная круглая кнопка панели.
 const TABS = [
-  { key: 'home', get title() { return tr('Обзор'); }, Icon: IconHome, theme: 'steel' },
-  { key: 'metrics', get title() { return tr('Метрики'); }, Icon: IconActivity, theme: 'forest' },
-  { key: 'coach', get title() { return tr('Хирон'); }, Icon: IconChiron, theme: 'steel' },
-  { key: 'growth', get title() { return RU ? 'Рост' : 'Growth'; }, Icon: IconGrowth, theme: 'forest' },
-  { key: 'profile', get title() { return tr('Профиль'); }, Icon: IconProfile, theme: 'steel' },
+  { key: 'home', get title() { return tr('Обзор'); }, Icon: IconHome },
+  { key: 'metrics', get title() { return tr('Метрики'); }, Icon: IconActivity },
+  { key: 'coach', get title() { return tr('Хирон'); }, Icon: IconChiron },
+  { key: 'growth', get title() { return RU ? 'Рост' : 'Growth'; }, Icon: IconGrowth },
+  { key: 'profile', get title() { return tr('Профиль'); }, Icon: IconProfile },
 ];
 const TAB_KEYS = TABS.map((t) => t.key);
-const THEME_OF = Object.fromEntries(TABS.map((t) => [t.key, t.theme]));
-// Цвет, плавно перетекающий между палитрами вкладок.
-const tabColor = (anim, key) => anim.interpolate({ inputRange: TABS.map((_, i) => i), outputRange: TABS.map((t) => THEMES[t.theme][key]) });
 
 function Main() {
   const insets = useSafeAreaInsets();
@@ -75,13 +72,12 @@ function Main() {
   // Подробный экран: { key, arg, from } — палитра берётся от вкладки, с которой открыли.
   const [detail, setDetail] = useState(null);
   const tabIndex = TAB_KEYS.indexOf(tab);
-  const tabAnim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(tabAnim, { toValue: tabIndex, duration: TAB_MS, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }).start();
-  }, [tabIndex, tabAnim]);
   const [ready, setReady] = useState(false);
   const [splash, setSplash] = useState(true);
   const [profile, setProfile] = useState(null);
+  // Тема (светлая/тёмная) из профиля: применяется сразу, на всём дереве (ключ ниже перерисовывает экраны).
+  const themeName = profile && profile.theme === 'dark' ? 'dark' : 'light';
+  const colors = applyTheme(themeName);
   const [sdk, setSdk] = useState('');
   const [granted, setGranted] = useState(new Set());
   const [dataset, setDataset] = useState(null);
@@ -438,8 +434,9 @@ function Main() {
   // Экран запуска лежит поверх: когда логотип долетел до шапки, под ним уже
   // открывается главный экран, а запуск растворяется — без чёрной паузы.
   return (
-    <View style={{ flex: 1, backgroundColor: '#06141B' }}>
-      {screen === 'intro' ? null : <ScreenIn key={screenKey + ':' + (RU ? 'ru' : 'en')} dir={nav.dir}>{renderScreen()}</ScreenIn>}
+    <View style={{ flex: 1, backgroundColor: splash ? '#06141B' : colors.bg }}>
+      <StatusBar barStyle={splash || colors.dark ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
+      {screen === 'intro' ? null : <ScreenIn key={screenKey + ':' + (RU ? 'ru' : 'en') + ':' + themeName} dir={nav.dir}>{renderScreen()}</ScreenIn>}
       {splash ? <LaunchScreen ready={ready} firstRun={ready && !profile} amb={amb} onReveal={onIntroDone} onDone={() => setSplash(false)} /> : null}
     </View>
   );
@@ -457,55 +454,55 @@ function Main() {
         return <DebugScreen granted={granted} sdk={sdk} dataset={dataset} onBack={() => setScreen('home')} onHide={isDevBuild ? undefined : () => { setDevMode(false); setScreen('home'); }} />;
       case 'log':
         return (
-          <ColorsContext.Provider value={THEMES.steel}>
+          <ColorsContext.Provider value={colors}>
             <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack}
             plan={profile && profile.sleepPlan} onSavePlan={onSavePlan} />
           </ColorsContext.Provider>
         );
       case 'workouts':
         return (
-          <ColorsContext.Provider value={THEMES.teal}>
+          <ColorsContext.Provider value={colors}>
             <WorkoutsScreen result={result} loading={loading} onRefresh={refresh} onOpen={open} onBack={goBack} />
           </ColorsContext.Provider>
         );
       case 'recap':
         return recap ? <RecapScreen recap={recap} onBack={goBack} /> : null;
       case 'achievements':
-        return <ColorsContext.Provider value={THEMES.steel}><AchievementsScreen list={achievements.list} onBack={goBack} /></ColorsContext.Provider>;
+        return <ColorsContext.Provider value={colors}><AchievementsScreen list={achievements.list} onBack={goBack} /></ColorsContext.Provider>;
       case 'import':
         return (
-          <ColorsContext.Provider value={THEMES.steel}>
+          <ColorsContext.Provider value={colors}>
             <ImportScreen importInfo={importInfo} entriesCount={entries.length} onApple={setImported} onDeleteApple={() => setImported(null)}
               onCSV={addCSV} backupData={backupData} onRestore={restoreBackup} onBack={goBack} />
           </ColorsContext.Provider>
         );
       case 'about':
-        return <ColorsContext.Provider value={THEMES.steel}><AboutDataScreen onBack={goBack} /></ColorsContext.Provider>;
+        return <ColorsContext.Provider value={colors}><AboutDataScreen onBack={goBack} /></ColorsContext.Provider>;
       case 'cycle':
         return (
-          <ColorsContext.Provider value={THEMES.steel}>
+          <ColorsContext.Provider value={colors}>
             <CycleScreen base={result && result.cycle} onBack={goBack} onLogOther={() => open('log:period')}
               onStartToday={() => addEntry({ id: String(Date.now()), type: 'period', date: dayKey(new Date()), days: (result && result.cycle && result.cycle.periodLen) || 5, t: Date.now() })} />
           </ColorsContext.Provider>
         );
       case 'tips':
         return (
-          <ColorsContext.Provider value={THEMES.steel}>
+          <ColorsContext.Provider value={colors}>
             <TipsScreen rec={recommend(result, profile)} onBack={goBack} />
           </ColorsContext.Provider>
         );
       case 'detail': {
         const w = detail.key === 'workout' && result && result.series ? result.series.workouts[detail.arg] : null;
         return (
-          <ColorsContext.Provider value={THEMES[THEME_OF[detail.from] || 'teal']}>
+          <ColorsContext.Provider value={colors}>
             <DetailScreen detail={buildDetail(detail.key, result, profile, w)} onBack={goBack} />
           </ColorsContext.Provider>
         );
       }
       default: {
-        const theme = THEMES[TABS[tabIndex].theme];
+        const theme = colors;
         return (
-          <Animated.View style={{ flex: 1, backgroundColor: tabColor(tabAnim, 'bg') }}>
+          <View style={{ flex: 1, backgroundColor: colors.bg }}>
             <ColorsContext.Provider value={theme}>
               <FadeIn key={tab} dir={nav.tabDir}>
                 {tab === 'coach' ? (
@@ -527,7 +524,7 @@ function Main() {
               </FadeIn>
             </ColorsContext.Provider>
             <TabBar tabs={TABS} active={tab} onChange={switchTab} bottom={insets.bottom} />
-          </Animated.View>
+          </View>
         );
       }
     }
@@ -537,7 +534,6 @@ function Main() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <ErrorBoundary>
         <Main />
       </ErrorBoundary>
