@@ -206,7 +206,7 @@ describe.each(['light', 'dark'])('theme=%s', (theme) => {
     const { errors, seen } = await runApp({ lang: 'ru', stored: true, theme });
     expect(errors).toEqual([]);
     for (const k of ['home', 'metrics', 'coach', 'growth', 'profile']) expect(seen[k].length).toBeGreaterThan(10);
-    expect(seen.profile).toContain('Тема');
+    expect(seen.profile).toContain('ТЕМА');
     const T = require(path.join(ROOT, 'lib/theme'));
     expect(T.THEMES[theme].bg).toBe(theme === 'dark' ? '#0E0F11' : '#EEF0F3');
     expect(T.COLORS.name).toBe(theme);
