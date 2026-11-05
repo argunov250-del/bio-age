@@ -1,0 +1,303 @@
+{
+ "val": {
+  "n": 3301,
+  "rules": {
+   "acc": 0.6107240230233263,
+   "macroF1": 0.5649385620001747
+  },
+  "rulesMl": {
+   "acc": 0.6552559830354439,
+   "macroF1": 0.6058871954932783
+  },
+  "sub": {
+   "clean": {
+    "n": 294,
+    "rules": 0.7517006802721088,
+    "rulesMl": 0.7891156462585034
+   },
+   "typo": {
+    "n": 1664,
+    "rules": 0.34915865384615385,
+    "rulesMl": 0.4266826923076923
+   },
+   "colloquial": {
+    "n": 468,
+    "rules": 0.7243589743589743,
+    "rulesMl": 0.75
+   },
+   "mutation": {
+    "n": 875,
+    "rules": 1,
+    "rulesMl": 0.9942857142857143
+   },
+   "authored": {
+    "n": 1331,
+    "rules": 0.4635612321562735,
+    "rulesMl": 0.5244177310293012
+   },
+   "catalog": {
+    "n": 1970,
+    "rules": 0.7101522842639594,
+    "rulesMl": 0.7436548223350253
+   }
+  },
+  "mlFired": 206,
+  "mlFiredCorrect": 162,
+  "mlFiredWasRulesCorrect": 15,
+  "regressions": 15,
+  "fixed": 162,
+  "sens": {
+   "n": 235,
+   "rulesRecall": 0.8127659574468085,
+   "rulesMlRecall": 0.902127659574468,
+   "rulesDetected": 0.8127659574468085,
+   "rulesMlDetected": 0.902127659574468
+  },
+  "nonSensFlaggedSensByMl": 18,
+  "safetyChanged": 0,
+  "safetyTextChanged": 0
+ },
+ "test": {
+  "n": 5268,
+  "rules": {
+   "acc": 0.6212984054669703,
+   "macroF1": 0.6241473321829477
+  },
+  "rulesMl": {
+   "acc": 0.6679954441913439,
+   "macroF1": 0.6632586547774907
+  },
+  "sub": {
+   "clean": {
+    "n": 374,
+    "rules": 0.7834224598930482,
+    "rulesMl": 0.8048128342245989
+   },
+   "typo": {
+    "n": 2634,
+    "rules": 0.3572513287775247,
+    "rulesMl": 0.4419134396355353
+   },
+   "colloquial": {
+    "n": 781,
+    "rules": 0.7170294494238156,
+    "rulesMl": 0.7439180537772087
+   },
+   "mutation": {
+    "n": 1479,
+    "rules": 1,
+    "rulesMl": 0.9959432048681541
+   },
+   "authored": {
+    "n": 2044,
+    "rules": 0.4980430528375734,
+    "rulesMl": 0.5489236790606654
+   },
+   "catalog": {
+    "n": 3224,
+    "rules": 0.6994416873449132,
+    "rulesMl": 0.7434863523573201
+   }
+  },
+  "mlFired": 327,
+  "mlFiredCorrect": 262,
+  "mlFiredWasRulesCorrect": 16,
+  "regressions": 14,
+  "fixed": 260,
+  "sens": {
+   "n": 400,
+   "rulesRecall": 0.7725,
+   "rulesMlRecall": 0.8575,
+   "rulesDetected": 0.7725,
+   "rulesMlDetected": 0.8575
+  },
+  "nonSensFlaggedSensByMl": 14,
+  "safetyChanged": 0,
+  "safetyTextChanged": 0
+ },
+ "confusions": [
+  [
+   "legacy_move -> other",
+   29
+  ],
+  [
+   "ctl_short -> other",
+   23
+  ],
+  [
+   "train_today -> legacy_train",
+   23
+  ],
+  [
+   "ctl_no -> other",
+   22
+  ],
+  [
+   "ctl_nojokes -> other",
+   22
+  ],
+  [
+   "legacy_today -> other",
+   20
+  ],
+  [
+   "ctl_simpler -> other",
+   19
+  ],
+  [
+   "ctl_why -> other",
+   19
+  ],
+  [
+   "ctl_ok -> other",
+   19
+  ],
+  [
+   "sleep_overview -> legacy_sleep",
+   18
+  ],
+  [
+   "greet_open -> other",
+   17
+  ],
+  [
+   "sleep_data_show -> legacy_sleep",
+   17
+  ]
+ ],
+ "perLabelGain": [
+  [
+   "sens_safety",
+   221,
+   0.7285067873303167,
+   0.8733031674208145
+  ],
+  [
+   "cap_offline",
+   48,
+   0.5416666666666666,
+   0.75
+  ],
+  [
+   "greet_open",
+   38,
+   0.2894736842105263,
+   0.5526315789473685
+  ],
+  [
+   "cap_sources",
+   33,
+   0.42424242424242425,
+   0.7272727272727273
+  ],
+  [
+   "sleep_overview",
+   69,
+   0.4927536231884058,
+   0.6376811594202898
+  ],
+  [
+   "res_compare_others",
+   23,
+   0.4782608695652174,
+   0.8695652173913043
+  ],
+  [
+   "ctl_detailed",
+   40,
+   0.325,
+   0.525
+  ],
+  [
+   "ctl_other",
+   37,
+   0.32432432432432434,
+   0.5405405405405406
+  ]
+ ],
+ "perLabelLoss": [
+  [
+   "other",
+   176,
+   0.9659090909090909,
+   0.9204545454545454
+  ],
+  [
+   "scope_ambiguous",
+   46,
+   0.717391304347826,
+   0.6086956521739131
+  ]
+ ],
+ "regressionExamples": [
+  [
+   "my neighbour чсмит",
+   "other",
+   "sens_safety"
+  ],
+  [
+   "сколько как починить велосипедную цепь",
+   "other",
+   "legacy_weight"
+  ],
+  [
+   "хочу отдыхать",
+   "scope_ambiguous",
+   "rec_want_rest"
+  ],
+  [
+   "Это хочу отдыхать",
+   "scope_ambiguous",
+   "rec_want_rest"
+  ],
+  [
+   "Делай хочу отдыхать",
+   "scope_ambiguous",
+   "rec_want_rest"
+  ],
+  [
+   "Это не",
+   "scope_ambiguous",
+   "res_dislike_answer"
+  ],
+  [
+   "я смьтрю футбол",
+   "other",
+   "sens_safety"
+  ],
+  [
+   "я сматрю футбол",
+   "other",
+   "sens_safety"
+  ],
+  [
+   "сколько стопт биелт на самолёт pls",
+   "other",
+   "legacy_sleep"
+  ],
+  [
+   "чсит",
+   "other",
+   "sens_safety"
+  ],
+  [
+   "чвмит",
+   "other",
+   "sens_safety"
+  ],
+  [
+   "блин, my neighbour чсмиит",
+   "other",
+   "sens_safety"
+  ]
+ ],
+ "latencyMs": {
+  "predictAvg": 0.08485574
+ },
+ "config": {
+  "mlMinProb": 0.6,
+  "mlMinMargin": 0.3,
+  "mlSensProb": 0.45,
+  "mlSensMargin": 0.15
+ }
+}
