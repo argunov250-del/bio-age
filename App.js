@@ -434,10 +434,10 @@ function Main() {
   // Экран запуска лежит поверх: когда логотип долетел до шапки, под ним уже
   // открывается главный экран, а запуск растворяется — без чёрной паузы.
   return (
-    <View style={{ flex: 1, backgroundColor: splash ? '#06141B' : colors.bg }}>
-      <StatusBar barStyle={splash || colors.dark ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <StatusBar barStyle={colors.dark ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
       {screen === 'intro' ? null : <ScreenIn key={screenKey + ':' + (RU ? 'ru' : 'en') + ':' + themeName} dir={nav.dir}>{renderScreen()}</ScreenIn>}
-      {splash ? <LaunchScreen ready={ready} firstRun={ready && !profile} amb={amb} onReveal={onIntroDone} onDone={() => setSplash(false)} /> : null}
+      {splash ? <ColorsContext.Provider value={colors}><LaunchScreen ready={ready} firstRun={ready && !profile} onReveal={onIntroDone} onDone={() => setSplash(false)} /></ColorsContext.Provider> : null}
     </View>
   );
 
@@ -466,7 +466,7 @@ function Main() {
           </ColorsContext.Provider>
         );
       case 'recap':
-        return recap ? <RecapScreen recap={recap} onBack={goBack} /> : null;
+        return recap ? <ColorsContext.Provider value={colors}><RecapScreen recap={recap} onBack={goBack} /></ColorsContext.Provider> : null;
       case 'achievements':
         return <ColorsContext.Provider value={colors}><AchievementsScreen list={achievements.list} onBack={goBack} /></ColorsContext.Provider>;
       case 'import':
