@@ -14,7 +14,7 @@ import { compute } from './lib/compute';
 import { buildDetail } from './lib/details';
 import { TabBar, FadeIn } from './lib/ui';
 import { ScreenIn } from './lib/motion';
-import { IconHome, IconActivity, IconProfile, IconWorkout, IconChiron, IconGrowth } from './lib/icons';
+import { IconHome, IconActivity, IconProfile, IconChiron, IconGrowth } from './lib/icons';
 import { LaunchScreen } from './lib/screens/LaunchScreen';
 import { SetupScreen } from './lib/screens/SetupScreen';
 import { PermissionsScreen } from './lib/screens/PermissionsScreen';
@@ -61,7 +61,6 @@ const TABS = [
   { key: 'metrics', get title() { return tr('Метрики'); }, Icon: IconActivity, theme: 'forest' },
   { key: 'coach', get title() { return tr('Хирон'); }, Icon: IconChiron, theme: 'steel' },
   { key: 'growth', get title() { return RU ? 'Рост' : 'Growth'; }, Icon: IconGrowth, theme: 'forest' },
-  { key: 'workouts', get title() { return tr('Тренировки'); }, Icon: IconWorkout, theme: 'teal' },
   { key: 'profile', get title() { return tr('Профиль'); }, Icon: IconProfile, theme: 'steel' },
 ];
 const TAB_KEYS = TABS.map((t) => t.key);
@@ -262,21 +261,21 @@ function Main() {
       setScreen('log');
     } else if (key.startsWith('detail:') || key.startsWith('workout:')) {
       const [kind, arg] = key.split(':');
-      setDetail({ key: kind === 'workout' ? 'workout' : arg, arg: kind === 'workout' ? +arg : null, from: tab });
+      setDetail({ key: kind === 'workout' ? 'workout' : arg, arg: kind === 'workout' ? +arg : null, from: tab, back: screen === 'workouts' ? 'workouts' : 'home' });
       setScreen('detail');
     } else setScreen(key);
   }, [tab, screen, devMode]);
 
   const goBack = useCallback(() => {
     if (screen === 'detail') {
-      setScreen('home');
+      setScreen(detail && detail.back === 'workouts' ? 'workouts' : 'home');
       return true;
     }
     if (screen === 'home' && tab !== 'home') {
       setTab('home');
       return true;
     }
-    if (['debug', 'tips', 'log', 'cycle', 'about', 'import', 'achievements', 'recap'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'tips', 'log', 'cycle', 'about', 'import', 'achievements', 'recap', 'workouts'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -463,6 +462,12 @@ function Main() {
             plan={profile && profile.sleepPlan} onSavePlan={onSavePlan} />
           </ColorsContext.Provider>
         );
+      case 'workouts':
+        return (
+          <ColorsContext.Provider value={THEMES.teal}>
+            <WorkoutsScreen result={result} loading={loading} onRefresh={refresh} onOpen={open} onBack={goBack} />
+          </ColorsContext.Provider>
+        );
       case 'recap':
         return recap ? <RecapScreen recap={recap} onBack={goBack} /> : null;
       case 'achievements':
@@ -510,8 +515,6 @@ function Main() {
                     missingAccess={missingAccess} onAskAccess={onRequest} onOpen={open} />
                 ) : tab === 'growth' ? (
                   <GrowthScreen growth={growth} amb={amb} />
-                ) : tab === 'workouts' ? (
-                  <WorkoutsScreen result={result} loading={loading} onRefresh={refresh} onOpen={open} />
                 ) : tab === 'profile' ? (
                   <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
                     onSaveProfile={saveQuiet} onCycleChange={onCycleChange} onSettings={onSettings} dataset={dataset} oldAndroid={OLD_ANDROID}

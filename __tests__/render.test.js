@@ -1,4 +1,4 @@
-// Тест первого рендера: App → экран запуска → вкладки (Обзор, Метрики, Хирон, Рост, Тренировки, Профиль)
+// Тест первого рендера: App → экран запуска → вкладки (Обзор, Метрики, Хирон, Рост, Профиль)
 // при пустом хранилище и при сохранённых профиле/результате, на ru и en.
 // В релизе исключение при первой отрисовке закрывает приложение, поэтому любое
 // брошенное исключение и любой console.error (функция как child, порядок хуков,
@@ -163,7 +163,7 @@ async function runApp({ lang, stored }) {
   if (stored) {
     const bar = r.root.findAll((n) => n.type === TabBar)[0];
     if (!bar) throw new Error('TabBar не отрисован; экран: ' + seen.start.slice(0, 1500));
-    for (const key of ['metrics', 'coach', 'growth', 'workouts', 'profile', 'home']) {
+    for (const key of ['metrics', 'coach', 'growth', 'profile', 'home']) {
       const b = r.root.findAll((n) => n.type === TabBar)[0];
       await act(async () => { b.props.onChange(key); });
       await flush(); await flush();
@@ -182,7 +182,7 @@ async function runApp({ lang, stored }) {
     await flush(); await flush();
     seen.switched = texts();
     expect(seen.switched).toContain(other === 'en' ? 'Profile' : 'Профиль');
-    for (const key of ['home', 'metrics', 'coach', 'growth', 'workouts']) {
+    for (const key of ['home', 'metrics', 'coach', 'growth']) {
       await act(async () => { r.root.findAll((n) => n.type === TabBar)[0].props.onChange(key); });
       await flush();
       texts();
@@ -214,7 +214,13 @@ describe.each(cases)('render lang=%s stored=%s', (lang, stored) => {
       const title = lang === 'ru' ? 'Метрики' : 'Metrics';
       expect(seen.home).toContain(title);
       expect(seen.profile).toBeTruthy();
-      expect(seen.growth).toContain(lang === 'ru' ? 'Расти вместе с телом' : 'Grow with your body');
+      // Первое открытие «Роста» — вводный шаг 1/2.
+      expect(seen.growth).toContain('1/2');
+      expect(seen.growth).toContain(lang === 'ru' ? 'Далее' : 'Next');
+      // Вкладки «Тренировки» нет, тренировки — внизу «Обзора».
+      expect(seen.home).toContain(lang === 'ru' ? 'Все тренировки' : 'All workouts');
+      expect(seen.home).toContain(lang === 'ru' ? 'Добавить тренировку' : 'Add workout');
+      expect(seen.home.indexOf(lang === 'ru' ? 'Все тренировки' : 'All workouts')).toBeGreaterThan(seen.home.indexOf(lang === 'ru' ? 'Готовность' : 'Readiness'));
     }
   });
 });
@@ -262,6 +268,48 @@ describe('weather layers sit behind cards', () => {
 function RNflat(s) { return Array.isArray(s) ? Object.assign({}, ...s.filter(Boolean)) : s || {}; }
 
 
+// Онбординг «Роста»: два шага, флаг в AsyncStorage, повтор по «Что это?».
+describe('Growth onboarding', () => {
+  test.each(['ru', 'en'])('шаги 1/2 и 2/2, флаг, повтор (%s)', async (lang) => {
+    jest.resetModules();
+    jest.doMock('react-native', () => makeRN(lang), { virtual: true });
+    jest.doMock('react-native-svg', () => hostProxy(), { virtual: true });
+    jest.doMock('react-native-safe-area-context', () => ({ __esModule: true, SafeAreaView: host('SafeAreaView'), useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }), { virtual: true });
+    const mem = {};
+    jest.doMock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: async (k) => (k in mem ? mem[k] : null), setItem: async (k, v) => { mem[k] = String(v); } } }), { virtual: true });
+    const TR = require('react-test-renderer');
+    require(path.join(ROOT, 'lib/i18n')).setLang(lang);
+    const { GrowthScreen } = require(path.join(ROOT, 'lib/screens/GrowthScreen'));
+    const text = (r) => JSON.stringify(r.toJSON());
+    const press = async (r, label) => {
+      let b = r.root.findAll((n) => n.type === 'Text' && n.props.children === label)[0];
+      while (b && !b.props.onPress) b = b.parent;
+      await TR.act(async () => { b.props.onPress(); });
+    };
+    const L = lang === 'ru' ? { what: 'Что это', next: 'Далее', go: 'Растём', q: 'Что это?', main: 'Расти вместе с телом' } : { what: 'What is this', next: 'Next', go: "Let's grow", q: 'What is this?', main: 'Grow with your body' };
+    let r;
+    await TR.act(async () => { r = TR.create(React.createElement(GrowthScreen, { growth: null })); });
+    await TR.act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); });
+    expect(text(r)).toContain('1/2');
+    expect(text(r)).toContain(L.next);
+    expect(text(r)).not.toContain(L.main);
+    await press(r, L.next);
+    expect(text(r)).toContain('2/2');
+    await press(r, L.go);
+    expect(mem['growth.intro.v1']).toBe('1');
+    expect(text(r)).toContain(L.main);
+    await press(r, L.q);
+    expect(text(r)).toContain('1/2');
+    await TR.act(async () => { r.unmount(); });
+    // Флаг уже стоит — сразу основной экран.
+    await TR.act(async () => { r = TR.create(React.createElement(GrowthScreen, { growth: null })); });
+    await TR.act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); });
+    expect(text(r)).toContain(L.main);
+    expect(text(r)).not.toContain('1/2');
+    await TR.act(async () => { r.unmount(); });
+  });
+});
+
 // Вкладка «Рост»: без данных, с открытыми/закрытыми ступенями и панель «Растём».
 describe('GrowthScreen', () => {
   test.each(['ru', 'en'])('рисуется без роста и с ростом, панель открывается (%s)', async (lang) => {
@@ -269,6 +317,8 @@ describe('GrowthScreen', () => {
     jest.doMock('react-native', () => makeRN(lang), { virtual: true });
     jest.doMock('react-native-svg', () => hostProxy(), { virtual: true });
     jest.doMock('react-native-safe-area-context', () => ({ __esModule: true, SafeAreaView: host('SafeAreaView'), useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }), { virtual: true });
+    const mem = { 'growth.intro.v1': '1' };
+    jest.doMock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: async (k) => (k in mem ? mem[k] : null), setItem: async (k, v) => { mem[k] = String(v); } } }), { virtual: true });
     const errors = [];
     const spy = jest.spyOn(console, 'error').mockImplementation((...a) => { const m = a.map(String).join(' '); if (!/react-test-renderer is deprecated/.test(m)) errors.push(m); });
     const TR = require('react-test-renderer');
@@ -282,6 +332,7 @@ describe('GrowthScreen', () => {
     const text = (r) => JSON.stringify(r.toJSON());
     let r;
     await TR.act(async () => { r = TR.create(React.createElement(GrowthScreen, { growth: null })); });
+    await TR.act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); });
     expect(text(r)).toContain(lang === 'ru' ? 'Расти вместе с телом' : 'Grow with your body');
     await TR.act(async () => { r.update(React.createElement(GrowthScreen, { growth })); });
     expect(text(r)).toContain('22 lvl');

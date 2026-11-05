@@ -31,19 +31,29 @@ const GOOD = { steps: 9000, sleep: 7.5, workout: true };
 beforeEach(() => { for (const k of Object.keys(mem)) delete mem[k]; setLang('ru'); });
 afterAll(() => setLang('auto'));
 
-test('first run: level 0 and no historical XP', () => {
-  const r = mkResult(KEY0, () => GOOD);
-  const { state, growth } = computeGrowth(null, r, {}, KEY0);
-  expect(growth.level).toBe(0);
-  expect(growth.xp).toBe(0);
-  // повторный запуск в тот же день с теми же данными не даёт XP
-  const again = computeGrowth(state, r, {}, KEY0);
-  expect(again.growth.xp).toBe(0);
+test('first run: today counts immediately, previous days ignored', () => {
+  const r = mkResult(KEY0, (k) => (k === KEY0 ? GOOD : { steps: 20000, sleep: 9, workout: true }));
+  const { state, growth } = computeGrowth(null, r, {}, KEY0, [], [{ date: KEY0, type: 'weight' }]);
+  expect(growth.xp).toBe(12 + 12 + 10 + 4); // вчерашние дни не дают XP
+  expect(growth.xp).toBeGreaterThan(0);
+  expect(growth.today.sources.filter((x) => x.done).length).toBe(4);
+  // повторный расчёт в тот же день не удваивает
+  expect(computeGrowth(state, r, {}, KEY0, [], [{ date: KEY0, type: 'weight' }]).growth.xp).toBe(growth.xp);
   // новый день — идёт XP
   const d2 = shift(KEY0, 1);
   const next = computeGrowth(state, mkResult(d2, () => GOOD), {}, d2);
-  expect(next.growth.xp).toBeGreaterThan(0);
-  expect(next.growth.level).toBeGreaterThanOrEqual(1);
+  expect(next.growth.xp).toBeGreaterThan(growth.xp);
+});
+
+test('first run without goals met: 0 XP, then grows during the day', () => {
+  const none = mkResult(KEY0, (k) => (k === KEY0 ? {} : GOOD));
+  const first = computeGrowth(null, none, {}, KEY0);
+  expect(first.growth.xp).toBe(0);
+  expect(first.growth.level).toBe(0);
+  const later = computeGrowth(first.state, mkResult(KEY0, (k) => (k === KEY0 ? { steps: 9000 } : GOOD)), {}, KEY0);
+  expect(later.growth.xp).toBe(12);
+  const more = computeGrowth(later.state, mkResult(KEY0, (k) => (k === KEY0 ? { steps: 9000, sleep: 8 } : GOOD)), {}, KEY0);
+  expect(more.growth.xp).toBe(24);
 });
 
 test('same day is not double counted; late yesterday data counts once', () => {
@@ -157,12 +167,12 @@ test('updateGrowth persists, never throws, loadGrowth reads it', async () => {
   expect(await loadGrowth()).toBeNull();
   const now = new Date(2026, 0, 1, 12).getTime();
   const g = await updateGrowth(mkResult(KEY0, () => GOOD), {}, now);
-  expect(g.level).toBe(0);
+  expect(g.xp).toBeGreaterThan(0);
   expect(mem['growth.v1']).toBeTruthy();
   const g2 = await updateGrowth(null, null, now);
-  expect(g2.level).toBe(0);
+  expect(g2.level).toBe(g.level);
   const l = await loadGrowth();
-  expect(l.xp).toBe(0);
+  expect(l.xp).toBe(g.xp);
   mem['growth.v1'] = '{bad';
   await expect(updateGrowth({}, {}, now)).resolves.toBeTruthy();
 });
