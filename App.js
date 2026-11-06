@@ -50,6 +50,9 @@ import { applyIcon } from './lib/appIcon';
 // Чтобы включить: вернуть пакеты в CI и строку `background = require('./lib/background')` в try/catch.
 const background = null;
 const syncGoalsTask = (p) => { try { return background ? background.syncGoalsTask(p) : undefined; } catch (e) { return undefined; } };
+// Виджеты домашнего экрана: задача регистрируется при загрузке бандла (она же работает при «безголовом» запуске
+// от системы). Нативный модуль подключается в try/catch: его сбой не должен ломать запуск приложения.
+try { require('./lib/widgets/register').registerWidgets(); } catch (e) {}
 import { setHaptics, light, success } from './lib/haptics';
 import { setLite, OLD_ANDROID } from './lib/perf';
 import { getWeather } from './lib/weather';
@@ -268,6 +271,14 @@ function Main() {
     Promise.resolve(updateGrowth(result, profile, Date.now(), achievements.fresh)).then(takeGrowth).catch(() => {});
   }, [result, achievements, unlocks]);
   useEffect(() => { resultRef.current = result; }, [result]);
+  // Снимок для виджетов: после каждого расчёта и пересчёта роста (с небольшой задержкой, чтобы не дёргать систему подряд).
+  useEffect(() => {
+    if (!result) return undefined;
+    const id = setTimeout(() => {
+      try { require('./lib/widgets/sync').syncWidgets({ result, profile, growth, lang: RU ? 'ru' : 'en' }); } catch (e) {}
+    }, 1000);
+    return () => clearTimeout(id);
+  }, [result, growth, profile]);
   // Вода/витамины/дыхание/пауза изменились: обновить карточки и пересчитать опыт (работает и без данных Health Connect).
   useEffect(() => {
     let alive = true;

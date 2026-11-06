@@ -45,6 +45,8 @@ jobs:
           cp src/assets/*.png app/assets/
           mkdir -p app/assets/icons
           cp src/assets/icons/*.png app/assets/icons/
+          mkdir -p app/assets/widgets
+          cp src/assets/widgets/*.png app/assets/widgets/
           cp -r src/plugins app/plugins
           cd app
           node -e "
@@ -103,6 +105,8 @@ jobs:
               'expo-notifications',
               // Значки A–D (светлые/тёмные, монохромные) и activity-alias; нативный модуль — expo-alternate-app-icons (без его плагина).
               './plugins/withThemedIcons',
+              // 4 виджета домашнего экрана (светлая/тёмная тема — по системной); параметры — plugins/widgetsConfig.js.
+              ['react-native-android-widget', require('./plugins/widgetsConfig.js')],
               // Системный экран — только фон: логотип рисует экран загрузки приложения.
               ['expo-splash-screen', { image: './assets/splash-blank.png', backgroundColor: '#06141B', imageWidth: 1 }],
               ['expo-build-properties', { android: { minSdkVersion: 26 } }]
@@ -114,7 +118,7 @@ jobs:
         working-directory: app
         run: |
           npm install
-          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-document-picker expo-file-system expo-sharing expo-notifications expo-haptics react-native-view-shot expo-location expo-alternate-app-icons expo-system-ui
+          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-document-picker expo-file-system expo-sharing expo-notifications expo-haptics react-native-view-shot expo-location expo-alternate-app-icons expo-system-ui react-native-android-widget
           npm install fflate@0.8.3
 
       - name: Prebuild Android project
