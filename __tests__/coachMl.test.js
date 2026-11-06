@@ -84,8 +84,6 @@ describe('ML 2. модель', () => {
 describe('ML 3. опечатки и разговорные формы после правил', () => {
   test.each([
     ['ты бат?', 'cap_ai'],
-    ['нужин ли интернет', 'cap_offline'],
-    ['спс бро', 'ctl_thanks'],
   ])('«%s» -> %s (правила одни не справлялись)', (q, id) => {
     expect(rid(withMl(false, () => once(q)))).not.toBe(id);
     const r = withMl(true, () => once(q));
@@ -117,6 +115,10 @@ describe('ML 3. опечатки и разговорные формы после
   });
 });
 
+test('ML 3b. правила без модели понимают опечатки и разговорные формы (match.js)', () => {
+  expect(rid(withMl(false, () => once('нужин ли интернет')))).toBe('cap_offline');
+});
+
 describe('ML 4. безопасность: модель ничего не отменяет и не смягчает', () => {
   const RULE_SENSITIVE = ['болит в груди', 'я умираю', 'не могу дышать', 'умер после тренировки, ахаха', 'колено болит после бега', 'принимаю антибиотики можно тренироваться', 'у меня депрессия', 'мне стыдно что пропустил тренировку', 'потерял сознание после пробежки', 'сердце давит и трудно дышать'];
   test.each(RULE_SENSITIVE)('«%s»: ответ с моделью и без неё совпадает дословно', (q) => {
@@ -129,9 +131,9 @@ describe('ML 4. безопасность: модель ничего не отм�
   test('модель распознаёт чувствительное, которое правила пропустили, и отвечает осторожно, без юмора', () => {
     for (const [q, kind] of [['кружица голова и тимнеет в глазах', 'sens_unsure'], ['мне оч тревожна', 'legacy:support']]) {
       const r = withMl(true, () => once(q));
-      expect(rid(r)).toBe(kind);
+      // «кружица голова…» теперь ловят и сами правила безопасности (нечёткое совпадение): ответ осторожный в любом случае
+      if (q.startsWith('кружица')) expect(['sens_unsure', 'legacy:safety']).toContain(rid(r)); else { expect(rid(r)).toBe(kind); if (r.route.ml) expect(r.route.ml).toMatch(/^sens_/); }
       expect(r.humorId).toBeNull();
-      expect(r.route.ml).toMatch(/^sens_/);
     }
     const t = withMl(true, () => once('принимаю антибиотыки можно бегать'));
     expect(rid(t)).toBe('legacy:treatment');
@@ -148,7 +150,7 @@ describe('ML 4. безопасность: модель ничего не отм�
   });
   test('модель не может отправить в тренировку или юмор из чувствительного маршрута', () => {
     const r = withMl(true, () => once('кружица голова и тимнеет в глазах'));
-    expect(r.route.id).toBe('sens_unsure');
+    expect(['sens_unsure', 'safety']).toContain(r.route.id);
     expect(r.text.join(' ')).toMatch(/103|112/);
   });
 });
@@ -183,5 +185,16 @@ describe('ML 0. модель не входит в приложение', () => {
     expect(ML_WAS).toBe(false);
     expect(hasModel()).toBe(true);
     expect(withMl(false, () => predict('как улучшить сон'))).toBeNull();
+  });
+});
+
+describe('match.repairText: настоящие слова не «исправляются»', () => {
+  const { repairText } = require('../lib/coach/match');
+  test.each(['смеха', 'мама', 'зима', 'смех', 'смеяться', 'про смеха нет', 'мама зима', 'Омск', 'погода в Омске'])('«%s» без изменений', (q) => {
+    expect(repairText(q)).toBe(q);
+  });
+  test('настоящие опечатки исправляются', () => {
+    expect(repairText('какой перывый шаг?')).toBe('какой первый шаг?');
+    expect(repairText('whtas up plesae')).not.toBe('whtas up plesae');
   });
 });

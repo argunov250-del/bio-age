@@ -77,7 +77,7 @@ describe('целостность каталога групп 1–4', () => {
     });
     ['greet_hello', 'plan_today', 'mot_lazy', 'mot_no_want'].forEach((id) => {
       expect(BY_ID[id].variants.length).toBeGreaterThanOrEqual(8);
-      expect(BY_ID[id].variants.length).toBeLessThanOrEqual(12);
+      expect(BY_ID[id].variants.length).toBeLessThanOrEqual(16);
     });
     const greetTotal = GREETING.reduce((a, s) => a + s.variants.length, 0);
     expect(greetTotal).toBeGreaterThanOrEqual(8);

@@ -13,6 +13,7 @@ Module._extensions['.js'] = function (m, f) {
 };
 const load = Module._load;
 Module._load = function (req, parent, isMain) {
+  if (req === '@react-native-async-storage/async-storage') return { getItem: async () => null, setItem: async () => {}, removeItem: async () => {} };
   if (/(^|\/)lib\/health$|\/health$|appleHealth$/.test(req) && parent && parent.filename && parent.filename.startsWith(root)) {
     if (/appleHealth$/.test(req)) return { importedRecords: () => [], importedTypes: () => [] };
     return {};

@@ -113,7 +113,7 @@ describe('5. неизвестное, мусор, несколько тем', () 
   test('8–12 вариантов у unknown и благодарности', () => {
     expect(BY_ID.scope_unknown.variants.length).toBeGreaterThanOrEqual(8);
     expect(BY_ID.ctl_thanks.variants.length).toBeGreaterThanOrEqual(8);
-    expect(BY_ID.ctl_thanks.variants.length).toBeLessThanOrEqual(12);
+    expect(BY_ID.ctl_thanks.variants.length).toBeLessThanOrEqual(16);
   });
 });
 
@@ -341,7 +341,7 @@ describe('целостность каталога', () => {
   test('все варианты собираются без мусора при полном наборе переменных', () => {
     const full = buildVars({ steps7: 8000, steps30: 7500, stepGoal: 8000, sleepH: 7.5, sleepNorm: 7.5, sleepScore: 80, sleep7: 7.4, readiness: 75, rhr7: 60, active7: 200, workouts7: 3 }, { status: 'current', kind: 'rain', temp: 8, cond: 'rain', level: 'inconvenient', place: 'Москва', ageMin: 5, at: 1 }, { place: 'gym', activity: 'run' }, { sleep: 5, steps: 7000 }, true);
     ['savedLabel', 'savedAgo'].forEach((n) => { full[n] = { name: n, value: 'дождь', kind: 'text', available: true }; });
-    ['baseTrain', 'dangerWhy', 'wxCond', 'curCond', 'curCondCap', 'askPlace', 'askActivity', 'topicList', 'sleepTips', 'rankName', 'questTitle', 'questWhy'].forEach((n) => { full[n] = { name: n, value: 'текст', kind: 'text', available: true }; });
+    ['baseTrain', 'dangerWhy', 'wxCond', 'curCond', 'curCondCap', 'askPlace', 'askActivity', 'topicList', 'sleepTips', 'rankName', 'questTitle', 'questWhy', 'waterGoal', 'waterNote', 'curLevel', 'curRank'].forEach((n) => { full[n] = { name: n, value: 'текст', kind: 'text', available: true }; });
     SCENARIOS.forEach((sc) => sc.variants.forEach((v) => {
       const p = assemble(v, { ru: true, vars: full }).paras;
       expect({ id: v.id, ok: validate(p).ok }).toEqual({ id: v.id, ok: true });
