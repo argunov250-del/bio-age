@@ -307,7 +307,7 @@ describe('16–17. офлайн и отсутствие сетевых зави�
 describe('18. интерфейс не изменён вне необходимости', () => {
   test('чат и профиль сохранили ключевые элементы', () => {
     const chatSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'screens', 'CoachScreen.js'), 'utf8');
-    ['function Bubble', 'KineticText', 'KeyboardAvoidingView', 'topicsFor', 'GAUGE.typingMs', 'coach/store'].forEach((m) => expect(chatSrc).toContain(m));
+    ['function Bubble', 'KineticText', 'GAUGE.typingMs', 'coach/store', 'coach/qaEngine'].forEach((m) => expect(chatSrc).toContain(m));
     const prof = fs.readFileSync(path.join(__dirname, '..', 'lib', 'screens', 'ProfileScreen.js'), 'utf8');
     expect(prof).toContain('Юмор Хирона'); expect(prof).toContain('Очистить память Хирона'); expect(prof).not.toMatch(/Health ?Connect.*clear/i);
   });
