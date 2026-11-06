@@ -192,3 +192,22 @@ describe('C5. расширение частых сценариев', () => {
     ['скучно', 'как у тебя дела', 'я очень рад', 'расскажи шутку', 'пока', 'мне в лом'].forEach((q) => chat(Array(4).fill(q), { tone: 'off' }).forEach((r) => expect(r.humorId).toBe(null)));
   });
 });
+
+describe('C6. сквозные проверки через reply() (разговорные формы)', () => {
+  const rid = (r) => r.route && r.route.id;
+  const E2E = {
+    st_chat: ['давай поболтать', 'давай потреплемся', 'хочу поболтать', 'поболтай со мной', 'поговори со мной', 'давай пообщаемся'],
+    st_laugh: ['умираю со смеху', 'ахаха умираю со смеху', 'ору', 'ахах', 'ржу', 'лол'],
+    st_workout_killed: ['эта тренировка меня убила', 'тренировка убила меня', 'меня убила эта пробежка', 'после зала я труп', 'ноги отваливаются после бега', 'тренировка меня доконала'],
+  };
+  Object.entries(E2E).forEach(([id, qs]) => test.each(qs.map((q) => [q]))(id + ' <- «%s»', (q) => {
+    const r = one(q, { tone: 'playful' });
+    expect(rid(r)).toBe(id);
+    expect(BAD.test(txt(r))).toBe(false);
+    if (id !== 'st_chat') expect(txt(r)).not.toMatch(/103|112|правда плохо/);
+    if (id === 'st_workout_killed') { expect(r.humorId).toBe(null); expect(txt(r)).toMatch(/тренировк|нагрузк|отдох|восстанов/); }
+  }));
+  test('тревожные формулировки не уходят в шутливые сценарии', () => {
+    ['после тренировки боль в груди и тренировка меня убила', 'я умираю, не могу дышать'].forEach((q) => expect(['st_laugh', 'st_workout_killed', 'st_chat']).not.toContain(rid(one(q))));
+  });
+});
