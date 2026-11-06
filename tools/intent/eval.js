@@ -7,6 +7,7 @@ const path = require('path');
 const P = require('./pipeline');
 const { TYPO_KINDS } = require('./augment');
 const ml = P.COACH_CONFIG && require('./node_env').require('lib/coach/ml');
+if (ml) ml.setModel(require('./model/intent.json'));
 const D = path.join(__dirname, 'data');
 const load = (n) => fs.readFileSync(path.join(D, n + '.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
 const rowsOf = { val: load('val'), test: load('test') };
@@ -88,6 +89,7 @@ for (const sp of ['val', 'test']) {
 }
 // латентность и холодная загрузка (в этом же процессе: после прогрева)
 const texts = rowsOf.test.map((r) => r.text);
+C.ml = true;
 const t0 = process.hrtime.bigint();
 for (let i = 0; i < 3000; i++) ml.predict(texts[i % texts.length]);
 out.latencyMs = { predictAvg: Number(process.hrtime.bigint() - t0) / 1e6 / 3000 };

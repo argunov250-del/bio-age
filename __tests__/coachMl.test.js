@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 import { reply } from '../lib/coachBrain';
 import { COACH_CONFIG } from '../lib/coach/config';
-import { predict, featuresOf, probsOf, modelLabels, loadModel, describeRoute, isSensLabel } from '../lib/coach/ml';
+import { predict, featuresOf, probsOf, modelLabels, loadModel, describeRoute, isSensLabel, setModel, hasModel } from '../lib/coach/ml';
 import { normalize } from '../lib/coach/normalize';
 
 const okM = (value) => ({ status: 'ok', value });
@@ -20,6 +20,11 @@ const RESULT = {
 const once = (q, session) => reply(q, RESULT, {}, { history: [], session: session || {}, now: 1 });
 const withMl = (on, fn) => { const was = COACH_CONFIG.ml; COACH_CONFIG.ml = on; try { return fn(); } finally { COACH_CONFIG.ml = was; } };
 const rid = (r) => (r.route.kind === 'engine' ? r.route.control ? 'ctl_' + r.route.control : r.route.id : 'legacy:' + r.route.id);
+
+// Модель в приложение не входит: тесты подставляют её явно (из tools/, который CI не копирует).
+const ML_WAS = COACH_CONFIG.ml;
+beforeAll(() => { setModel(require('../tools/intent/model/intent.json')); COACH_CONFIG.ml = true; }); // прямые вызовы predict() требуют включённого флага
+afterAll(() => { COACH_CONFIG.ml = ML_WAS; setModel(null); });
 
 const FX = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'intent_xcheck.json'), 'utf8'));
 
@@ -49,7 +54,7 @@ describe('ML 2. модель', () => {
   test('загружается один раз, размер в пределах 3 МБ, метки согласованы', () => {
     const m = loadModel();
     expect(loadModel()).toBe(m);
-    expect(fs.statSync(path.join(__dirname, '..', 'lib', 'coach', 'model', 'intent.json')).size).toBeLessThan(3 * 1024 * 1024);
+    expect(fs.statSync(path.join(__dirname, '..', 'tools', 'intent', 'model', 'intent.json')).size).toBeLessThan(3 * 1024 * 1024);
     expect(m.Q.length).toBe(m.dim * m.labels.length);
     for (const l of ['other', 'sens_safety', 'sens_treatment', 'sens_support', 'ctl_short', 'cap_ai', 'legacy_sleep']) expect(m.labels).toContain(l);
     expect(Math.abs(Array.from(probsOf('как улучшить сон')).reduce((a, b) => a + b, 0) - 1)).toBeLessThan(1e-9);
@@ -145,5 +150,38 @@ describe('ML 4. безопасность: модель ничего не отм�
     const r = withMl(true, () => once('кружица голова и тимнеет в глазах'));
     expect(r.route.id).toBe('sens_unsure');
     expect(r.text.join(' ')).toMatch(/103|112/);
+  });
+});
+
+describe('ML 0. модель не входит в приложение', () => {
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
+  const files = walk(path.join(__dirname, '..', 'lib'));
+  test('в lib/ нет *.json-моделей и каталога model/', () => {
+    expect(files.filter((f) => /[\\/]model[\\/]/.test(f) || /intent.*\.json$/i.test(f))).toEqual([]);
+  });
+  test('ни один файл lib/ не подключает tools/ или *.json', () => {
+    const re = /(?:require\s*\(|from\s+|import\s*\()\s*['"`]([^'"`]+)['"`]/g;
+    const bad = [];
+    for (const f of files.filter((x) => /\.(js|jsx|ts|tsx)$/.test(x))) {
+      const src = fs.readFileSync(f, 'utf8'); let m;
+      while ((m = re.exec(src))) if (/(^|\/)tools(\/|$)/.test(m[1]) || /\.json$/.test(m[1])) bad.push(path.relative(path.join(__dirname, '..'), f) + ' -> ' + m[1]);
+    }
+    expect(bad).toEqual([]);
+  });
+  test('без модели predict() = null, движок отвечает как с ml=false', () => {
+    setModel(null);
+    try {
+      expect(hasModel()).toBe(false);
+      expect(withMl(true, () => predict('как улучшить сон'))).toBeNull();
+      const a = withMl(true, () => once('кружица голова и тимнеет в глазах'));
+      const b = withMl(false, () => once('кружица голова и тимнеет в глазах'));
+      expect(a.text).toEqual(b.text);
+      expect(a.route.ml || null).toBeNull();
+    } finally { setModel(require('../tools/intent/model/intent.json')); }
+  });
+  test('флаг ml по умолчанию выключен; при выключенном флаге predict() = null даже с моделью', () => {
+    expect(ML_WAS).toBe(false);
+    expect(hasModel()).toBe(true);
+    expect(withMl(false, () => predict('как улучшить сон'))).toBeNull();
   });
 });

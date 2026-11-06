@@ -10,7 +10,7 @@
   * индекс = FNV-1a32(tag + единицы UTF-16, побайтно lo,hi) & (2^bits - 1);
   * значение = (1 + ln(count)), затем L2-нормировка.
 Модель: мультиномиальная логистическая регрессия (sklearn), температурная калибровка на val,
-веса int8 с масштабом на класс. Экспорт: lib/coach/model/intent.json + __tests__/fixtures/intent_xcheck.json.
+веса int8 с масштабом на класс. Экспорт: tools/intent/model/intent.json + __tests__/fixtures/intent_xcheck.json.
 """
 import argparse, base64, json, math, os, struct, sys
 import numpy as np
@@ -147,7 +147,7 @@ def main():
         'scale': [float('%.6g' % s) for s in scale], 'bias': [float('%.5g' % x) for x in b],
         'w': base64.b64encode(Q.tobytes()).decode('ascii'),  # feature-major: dim x classes, int8
     }
-    path = os.path.join(ROOT, 'lib', 'coach', 'model', 'intent.json')
+    path = os.path.join(ROOT, 'tools', 'intent', 'model', 'intent.json')
     json.dump(model, open(path, 'w'), separators=(',', ':'))
     size = os.path.getsize(path)
     print('model bytes', size, file=sys.stderr)
