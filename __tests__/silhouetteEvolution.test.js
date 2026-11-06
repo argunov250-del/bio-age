@@ -26,6 +26,7 @@ jest.mock('react-native-svg', () => new Proxy({ __esModule: true }, {
   get: (t, k) => (k === '__esModule' ? true : k === 'default' ? mockHost('Svg') : typeof k === 'string' ? mockHost(k) : undefined),
 }), { virtual: true });
 jest.mock('../lib/colors', () => ({ useColors: () => ({ dark: mockDark, accent: '#2BB673' }) }));
+jest.mock('expo-haptics', () => ({ impactAsync: async () => {}, selectionAsync: async () => {}, notificationAsync: async () => {}, ImpactFeedbackStyle: {}, NotificationFeedbackType: {} }), { virtual: true });
 
 const { Silhouette } = require('../lib/Silhouette');
 const { setLite } = require('../lib/perf');

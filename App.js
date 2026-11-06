@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, StatusBar, View, AppState, Appearance } from 'react-native';
+import { BackHandler, StatusBar, View, AppState, Appearance, Linking } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './lib/ErrorScreen';
 import { applyTheme, resolveTheme } from './lib/theme';
@@ -30,6 +30,7 @@ import { WorkoutsScreen } from './lib/screens/WorkoutsScreen';
 import { ProfileScreen } from './lib/screens/ProfileScreen';
 import { DetailScreen } from './lib/screens/DetailScreen';
 import { TipsScreen } from './lib/screens/TipsScreen';
+import { SleepScheduleScreen } from './lib/screens/SleepScheduleScreen';
 import { LogScreen } from './lib/screens/LogScreen';
 import { CoachScreen } from './lib/screens/CoachScreen';
 import { CycleScreen } from './lib/screens/CycleScreen';
@@ -327,6 +328,30 @@ function Main() {
 
   useEffect(() => { setChironOpener(() => open('coach')); return () => setChironOpener(null); }, [open]);
 
+  // Нажатие на виджет: epimely://tab/… или epimely://detail/… (схема задана в CI). Применяем, когда открыт главный экран.
+  const [widgetLink, setWidgetLink] = useState(null);
+  useEffect(() => {
+    let sub = null;
+    try {
+      Promise.resolve(Linking.getInitialURL()).then((u) => { if (u) setWidgetLink(u); }).catch(() => {});
+      sub = Linking.addEventListener('url', (e) => { if (e && e.url) setWidgetLink(e.url); });
+    } catch (e) {}
+    return () => { try { if (sub && sub.remove) sub.remove(); } catch (e) {} };
+  }, []);
+  useEffect(() => {
+    if (!widgetLink || !profile || screen !== 'home') return;
+    let k = null;
+    try { k = require('./lib/widgets/links').widgetLinkKey(widgetLink); } catch (e) {}
+    if (k && k.startsWith('detail:') && !result) return; // подробный экран нужен расчёт — ждём
+    setWidgetLink(null);
+    if (k) open(k);
+  }, [widgetLink, profile, screen, result, open]);
+  // Виджет просит фоновый доступ к Health Connect (флаг ставит его задача при добавлении): спрашиваем один раз.
+  useEffect(() => {
+    if (screen !== 'home' || !profile) return;
+    try { require('./lib/widgets/permission').askBackgroundIfFlagged(); } catch (e) {}
+  }, [screen, profile]);
+
   const goBack = useCallback(() => {
     if (screen === 'detail') {
       setScreen(detail && detail.back === 'workouts' ? 'workouts' : 'home');
@@ -336,7 +361,7 @@ function Main() {
       setTab('home');
       return true;
     }
-    if (['debug', 'tips', 'log', 'cycle', 'about', 'import', 'achievements', 'recap', 'workouts'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'tips', 'log', 'sleep', 'cycle', 'about', 'import', 'achievements', 'recap', 'workouts'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -412,6 +437,15 @@ function Main() {
     setProfile(p);
     success();
     start(p);
+  };
+  // Режим сна (экран «Режим сна»): сохранить без перезагрузки данных и переставить напоминания.
+  const onSaveSchedule = async (plan) => {
+    const prev = (profile && profile.sleepPlan) || {};
+    const p = { ...profile, sleepPlan: { ...prev, ...plan } };
+    await saveProfile(p);
+    setProfile(p);
+    scheduleReminders(p, dataset, { ask: !!(plan.remindWake && !prev.remindWake) });
+    if (plan.on || prev.on) start(p);
   };
   const planLast = profile && profile.sleepPlan && profile.sleepPlan.on ? lastPlanNight(profile.sleepPlan, opensRef.current) : null;
   // Взят ли сон этой ночи из Health Connect (часы), а не по расписанию.
@@ -524,6 +558,13 @@ function Main() {
           <ColorsContext.Provider value={colors}>
             <LogScreen entries={entries} profile={profile} initialType={logType} onSave={addEntry} onDelete={deleteEntry} onBack={goBack}
             plan={profile && profile.sleepPlan} onSavePlan={onSavePlan} />
+          </ColorsContext.Provider>
+        );
+      case 'sleep':
+        return (
+          <ColorsContext.Provider value={colors}>
+            <SleepScheduleScreen profile={profile} dataset={dataset} norm={result && result.scores && result.scores.sleep ? result.scores.sleep.norm : null}
+              onSave={onSaveSchedule} onSettings={onSettings} onBack={goBack} />
           </ColorsContext.Provider>
         );
       case 'workouts':

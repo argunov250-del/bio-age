@@ -18,7 +18,8 @@ function setup({ reduce }) {
     View: host('View'), Text: host('Text'), Pressable: host('Pressable'), Modal: host('Modal'),
     Animated: { Value, View: host('AView'), Text: host('AText'), createAnimatedComponent: (C) => C, spring: anim('spring'), timing: anim('timing') },
     Easing: { bezier: () => (x) => x, linear: (x) => x },
-    StyleSheet: { absoluteFillObject: {} },
+    StyleSheet: { absoluteFillObject: {}, hairlineWidth: 1 },
+    ScrollView: host('ScrollView'),
     Platform: { OS: 'ios', Version: 17 },
     Dimensions: { get: () => ({ width: 400, height: 800 }) },
     PanResponder: { create: (cfg) => { pan = cfg; return { panHandlers: {} }; } },
@@ -76,9 +77,9 @@ describe('motion helpers', () => {
     let r;
     TR.act(() => { r = TR.create(React.createElement(motion.Sheet, { onClose }, React.createElement('Text'))); });
     expect(calls.spring).toBeGreaterThan(0);
-    TR.act(() => { r.root.findByType('Pressable').props.onPress(); });
+    TR.act(() => { r.root.findByProps({ accessibilityLabel: 'close' }).props.onPress(); });
     expect(onClose).toHaveBeenCalledTimes(1);
-    TR.act(() => { r.root.findByType('Pressable').props.onPress(); }); // повтор не закрывает дважды
+    TR.act(() => { r.root.findByProps({ accessibilityLabel: 'close' }).props.onPress(); }); // повтор не закрывает дважды
     expect(onClose).toHaveBeenCalledTimes(1);
 
     const second = jest.fn();
@@ -92,6 +93,28 @@ describe('motion helpers', () => {
     expect(second).toHaveBeenCalledTimes(1);
   });
 
+  test('Sheet: grabber tap closes; drag from grabber/scroll top; rubber band and backdrop follow', async () => {
+    const { motion, getPan, TR } = setup({ reduce: false });
+    await flushReduce();
+    const onClose = jest.fn();
+    let r;
+    TR.act(() => { r = TR.create(React.createElement(motion.Sheet, { onClose, title: 'T' }, React.createElement('Text'))); });
+    expect(r.root.findAllByType('Text').some((x) => x.props.children === '×')).toBe(true);
+    const grab = r.root.findByProps({ accessibilityLabel: 'sheet-grabber' });
+    expect(grab.props.style.height).toBeGreaterThanOrEqual(44);
+    const pan = getPan();
+    expect(pan.onMoveShouldSetPanResponderCapture({}, { dy: 20, dx: 0 })).toBe(true);
+    expect(pan.onMoveShouldSetPanResponderCapture({}, { dy: 3, dx: 0 })).toBe(false);
+    expect(motion.sheetRubber(-100)).toBeGreaterThan(-30);
+    expect(motion.sheetRubber(50)).toBe(50);
+    TR.act(() => { pan.onPanResponderMove({}, { dy: 60 }); pan.onPanResponderRelease({}, { dy: 60, vy: 1.5 }); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    const second = jest.fn();
+    TR.act(() => { r = TR.create(React.createElement(motion.Sheet, { onClose: second }, React.createElement('Text'))); });
+    TR.act(() => { r.root.findByProps({ accessibilityLabel: 'sheet-grabber' }).props.onPress(); });
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
   test('Sheet closes instantly under reduce motion', async () => {
     const { motion, calls, TR } = setup({ reduce: true });
     await flushReduce();
@@ -99,7 +122,7 @@ describe('motion helpers', () => {
     let r;
     TR.act(() => { r = TR.create(React.createElement(motion.Sheet, { onClose }, React.createElement('Text'))); });
     expect(calls.spring).toBe(0);
-    TR.act(() => { r.root.findByType('Pressable').props.onPress(); });
+    TR.act(() => { r.root.findByProps({ accessibilityLabel: 'close' }).props.onPress(); });
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(calls.timing).toBe(0);
   });

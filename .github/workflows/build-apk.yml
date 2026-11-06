@@ -56,6 +56,8 @@ jobs:
             c.expo.slug = 'bio-age';
             c.expo.icon = './assets/icon.png';
             c.expo.userInterfaceStyle = 'automatic';
+            // Схема для ссылок из виджетов (epimely://tab/…).
+            c.expo.scheme = 'epimely';
             c.expo.android = {
               ...(c.expo.android || {}),
               package: 'com.bioage.proto',
@@ -88,6 +90,7 @@ jobs:
                 'android.permission.health.READ_ACTIVE_CALORIES_BURNED',
                 'android.permission.health.READ_MENSTRUATION',
                 'android.permission.health.READ_HEALTH_DATA_HISTORY',
+                'android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND',
                 'android.permission.health.READ_HYDRATION',
                 'android.permission.health.WRITE_HYDRATION'
               ],

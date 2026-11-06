@@ -146,11 +146,12 @@ async function setup(lang, theme) {
 
 describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']])('экран Хирона (%s, %s)', (lang, theme) => {
   afterEach(() => { jest.restoreAllMocks(); });
-  test('нет TextInput в чате; подсказки, «Все темы» и «Мне плохо» на месте', async () => {
+  test('нет TextInput в чате; подсказки и «Все темы» на месте, кнопки «Мне плохо» нет', async () => {
     const t = await setup(lang, theme);
     expect(t.r.root.findAll((n) => n.type === 'TextInput')).toHaveLength(0);
     expect(t.findText(t.tr('Все темы'))).toBeTruthy();
-    expect(t.findText(t.tr('Мне плохо'))).toBeTruthy();
+    expect(t.text()).not.toMatch(/Мне плохо|I feel unwell/);
+    expect(t.text()).toContain(t.tr('Хирон даёт общие советы и не заменяет врача.'));
     expect(t.findText(t.q('sleep_how_much'))).toBeTruthy();
     expect(t.errors).toEqual([]);
   });
@@ -177,9 +178,13 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
     expect(t.r.root.findAll((n) => n.type === 'TextInput')).toHaveLength(1);
     expect(t.text()).toContain(lang === 'ru' ? 'Шаги и активность' : 'Steps and activity');
     expect(t.text()).not.toContain('cycle');
+    // у каждого раздела есть число вопросов
+    const secCount = t.r.root.findAll((n) => n.type === 'Text' && /^\d+$/.test(String(n.props.children)));
+    expect(secCount.length).toBeGreaterThanOrEqual(5);
     const input = t.r.root.findAll((n) => n.type === 'TextInput')[0];
     await t.TR.act(async () => { input.props.onChangeText(lang === 'ru' ? 'фазы' : 'stages'); });
-    expect(t.findText(t.q('sleep_phases') + '  · PRO')).toBeTruthy();
+    expect(t.findText(t.q('sleep_phases'))).toBeTruthy();
+    expect(t.findText('PRO')).toBeTruthy();
     expect(inChips('app_score')).toBe(chipCount); // в списке окна его нет (остался только чип под чатом, если он там был)
     await t.TR.act(async () => { input.props.onChangeText('qqqq'); });
     expect(t.text()).toContain(t.tr('Ничего не найдено'));
@@ -188,15 +193,5 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
     await t.wait(1200);
     expect(t.r.root.findAll((n) => n.type === 'TextInput')).toHaveLength(0); // окно закрыто
     expect(t.text()).toContain(t.q('sleep_debt'));
-  });
-  test('«Мне плохо» показывает тексты безопасности и не трогает память', async () => {
-    const t = await setup(lang, theme);
-    const turn = () => require(path.join(ROOT, 'lib/coach/store'));
-    expect(turn()).toBeTruthy();
-    await t.pressText(t.tr('Мне плохо'));
-    const x = t.text();
-    expect(x).toMatch(/112/);
-    if (lang === 'ru') { expect(x).toMatch(/103/); expect(x).toContain('8-800-2000-122'); }
-    expect(t.errors).toEqual([]);
   });
 });
