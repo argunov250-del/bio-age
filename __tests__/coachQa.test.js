@@ -107,7 +107,7 @@ describe('движок ответов', () => {
   });
 });
 
-async function setup(lang, theme) {
+async function setup(lang, theme, model) {
   jest.resetModules();
   const host = (name) => function Host(props) { return React.createElement(name, props, props.children); };
   const gp = require('./growthUiHarness');
@@ -122,7 +122,11 @@ async function setup(lang, theme) {
   const FS = require('expo-file-system/legacy');
   FS.documentDirectory = 'file:///mock-docs/';
   FS.getInfoAsync.mockReset();
-  FS.getInfoAsync.mockImplementation(async (uri) => ({ exists: uri === 'file:///mock-docs/qwen3-4b-q5_k_m.gguf', isDirectory: false, size: 2800000000 }));
+  const modelOk = model !== 'fail';
+  FS.getInfoAsync.mockImplementation(async (uri) => ({ exists: modelOk && uri === 'file:///mock-docs/qwen3-4b-q5_k_m.gguf', isDirectory: false, size: modelOk ? 2800000000 : 0 }));
+  const picker = require('expo-document-picker');
+  picker.getDocumentAsync.mockReset();
+  picker.getDocumentAsync.mockResolvedValue({ canceled: !modelOk, assets: [] });
   const llama = require('llama.rn');
   llama.initLlama.mockReset();
   llama.initLlama.mockImplementation(async () => ({ completion: async () => ({ text: '<think>скрыто</think>Ложись и вставай в одно время. За час до сна убери экраны.' }) }));
@@ -209,11 +213,7 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
 });
 
 test('сбой модели: серая строка под пузырём с причиной', async () => {
-  const t = await setup('ru', 'light');
-  const FS = require('expo-file-system/legacy');
-  FS.getInfoAsync.mockImplementation(async () => ({ exists: false, isDirectory: false, size: 0 }));
-  const picker = require('expo-document-picker');
-  picker.getDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
+  const t = await setup('ru', 'light', 'fail');
   await t.pressText(t.q('sleep_how_much'));
   await t.wait(1200);
   const x = t.text();

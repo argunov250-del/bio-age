@@ -51,12 +51,13 @@ describe('askChiron', () => {
     await expect(llm.askChiron('Как спать?')).resolves.toBe('Ложись раньше.');
     expect(llama.initLlama).toHaveBeenCalledTimes(1);
     expect(llama.initLlama).toHaveBeenCalledWith(expect.objectContaining({
-      model: DEST, use_mlock: true, n_ctx: 2048, n_gpu_layers: 99,
+      model: DEST, use_mlock: false, use_mmap: true, n_ctx: 1024, n_batch: 256, n_threads: 4, n_gpu_layers: 0, no_gpu_devices: true,
     }));
     const arg = completion.mock.calls[0][0];
     expect(arg.n_predict).toBe(120);
     expect(arg.temperature).toBe(0.5);
-    expect(arg.stop).toEqual(['</s>', 'user:', 'assistant:']);
+    expect(arg.enable_thinking).toBe(false);
+    expect(arg.stop).toEqual(['</s>', '<|im_end|>', '<|endoftext|>']);
     expect(arg.messages[0].role).toBe('system');
     expect(arg.messages[0].content).toMatch(/Хирон/);
     expect(arg.messages[1]).toEqual({ role: 'user', content: 'Как спать?' });
@@ -65,29 +66,25 @@ describe('askChiron', () => {
     expect(llama.initLlama).not.toHaveBeenCalled();
   });
 
-  test('если mlock/GPU не встали, повтор на CPU', async () => {
+  test('файл в Загрузках открывается напрямую, без копии', async () => {
     const { llm, FS, llama } = fresh();
-    FS.getInfoAsync.mockImplementation(async (uri) => (uri === DEST ? present() : absent()));
-    llama.initLlama.mockRejectedValueOnce(new Error('mlock')).mockResolvedValueOnce({
-      completion: async () => ({ content: 'Ответ с CPU.' }),
-    });
-    await expect(llm.askChiron('?')).resolves.toBe('Ответ с CPU.');
-    expect(llama.initLlama).toHaveBeenNthCalledWith(2, expect.objectContaining({ use_mlock: false, n_gpu_layers: 0, n_ctx: 2048, model: DEST }));
+    FS.getInfoAsync.mockImplementation(async (uri) => (uri === DOWNLOAD ? present() : absent()));
+    llama.initLlama.mockResolvedValue({ completion: async () => ({ text: 'С диска.' }) });
+    await expect(llm.askChiron('?')).resolves.toBe('С диска.');
+    expect(FS.copyAsync).not.toHaveBeenCalled();
+    expect(llama.initLlama.mock.calls[0][0].model).toBe(DOWNLOAD);
+    expect(llama.initLlama.mock.calls[0][0].n_gpu_layers).toBe(0);
+    expect(llama.initLlama.mock.calls[0][0].use_mlock).toBe(false);
   });
 
-  test('файл в Загрузках копируется в документы приложения', async () => {
+  test('только блок think — ошибка с куском ответа, а не пустая строка', async () => {
     const { llm, FS, llama } = fresh();
-    let copied = false;
-    FS.copyAsync.mockImplementation(async () => { copied = true; });
-    FS.getInfoAsync.mockImplementation(async (uri) => {
-      if (uri === DEST) return copied ? present() : absent();
-      if (uri === DOWNLOAD) return present();
-      return absent();
-    });
-    llama.initLlama.mockResolvedValue({ completion: async () => ({ text: 'Скопировано.' }) });
-    await expect(llm.askChiron('?')).resolves.toBe('Скопировано.');
-    expect(FS.copyAsync).toHaveBeenCalledWith({ from: DOWNLOAD, to: DEST });
-    expect(llama.initLlama.mock.calls[0][0].model).toBe(DEST);
+    FS.getInfoAsync.mockImplementation(async (uri) => (uri === DEST ? present() : absent()));
+    llama.initLlama.mockResolvedValue({ completion: async () => ({ text: '<think>долго думаю и не закрываю' }) });
+    let caught;
+    try { await llm.askChiron('?'); } catch (e) { caught = e; }
+    expect(caught.detail).toMatch(/Пустой ответ/);
+    expect(caught.detail).toMatch(/think/);
   });
 
   test('нет файла и выбор отменён — detail с путём, модель не грузится', async () => {
@@ -105,15 +102,15 @@ describe('askChiron', () => {
     err.mockRestore();
   });
 
-  test('GPU и CPU оба упали — в detail обе причины', async () => {
+  test('сбой загрузки CPU попадает в detail', async () => {
     const { llm, FS, llama } = fresh();
     FS.getInfoAsync.mockImplementation(async (uri) => (uri === DEST ? present() : absent()));
-    llama.initLlama.mockRejectedValueOnce(new Error('opencl q5')).mockRejectedValueOnce(new Error('no mlock'));
+    llama.initLlama.mockRejectedValue(new Error('mmap failed'));
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});
     let caught;
     try { await llm.askChiron('?'); } catch (e) { caught = e; }
-    expect(caught.detail).toMatch(/opencl q5/);
-    expect(caught.detail).toMatch(/no mlock/);
+    expect(caught.detail).toMatch(/mmap failed/);
+    expect(llama.initLlama).toHaveBeenCalledTimes(1);
     expect(log).toHaveBeenCalled();
     log.mockRestore();
   });
