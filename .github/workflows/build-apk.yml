@@ -68,10 +68,6 @@ jobs:
                 backgroundColor: '#11212D'
               },
               permissions: [
-                // Чтение модели из «Загрузок». На Android 11+ произвольный .gguf всё равно
-                // может быть закрыт: тогда экран один раз просит выбрать файл (см. lib/llm.js).
-                'android.permission.READ_EXTERNAL_STORAGE',
-                'android.permission.MANAGE_EXTERNAL_STORAGE',
                 'android.permission.POST_NOTIFICATIONS',
                 'android.permission.RECEIVE_BOOT_COMPLETED',
                 'android.permission.VIBRATE',
@@ -122,14 +118,16 @@ jobs:
               ['expo-build-properties', { android: { minSdkVersion: 26, extraProguardRules: '-keep class com.rnllama.** { *; }' } }]
             ];
             fs.writeFileSync('app.json', JSON.stringify(c, null, 2));
-            // Секреты сборки. Пустой URL не трогаем: приложение остаётся на каталоге.
+            // Секреты сборки. Пустой URL не трогаем: приложение качает GGUF само.
             const url = process.env.CHIRON_URL || '';
             const key = process.env.CHIRON_KEY || '';
             if (url) {
               fs.writeFileSync('lib/chironConfig.js',
                 'export const CHIRON_URL = ' + JSON.stringify(url) + ';\\n' +
                 'export const CHIRON_KEY = ' + JSON.stringify(key) + ';\\n' +
-                'export const CHIRON_LOCAL = false;\\n');
+                'export const CHIRON_GGUF_URL = "https://huggingface.co/MaksimSun/chiron-gguf/resolve/main/chiron-0.6b-q4_k_m.gguf";\\n' +
+                'export const CHIRON_GGUF_MIRROR = "https://github.com/argunov250-del/bio-age/releases/download/android-latest/chiron.gguf";\\n' +
+                'export const CHIRON_MODEL_FILE = "chiron-0.6b-q4_k_m.gguf";\\n');
             }
           "
         env:
@@ -140,7 +138,7 @@ jobs:
         working-directory: app
         run: |
           npm install
-          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-document-picker expo-file-system expo-sharing expo-notifications expo-haptics react-native-view-shot expo-location expo-alternate-app-icons expo-system-ui react-native-android-widget llama.rn expo-intent-launcher
+          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-document-picker expo-file-system expo-sharing expo-notifications expo-haptics react-native-view-shot expo-location expo-alternate-app-icons expo-system-ui react-native-android-widget llama.rn
           npm install fflate@0.8.3
 
       - name: Prebuild Android project
@@ -149,7 +147,7 @@ jobs:
           npx expo prebuild --platform android --no-install
           # Только ARM (все реальные телефоны, включая старые 32-битные): APK заметно меньше.
           # Нативные .so llama.rn есть лишь для arm64-v8a (и x86_64): на 32-битном телефоне
-          # приложение откроется, но модель не загрузится — ей нужен 64-битный адрес и ~3 ГБ.
+          # приложение откроется, но модель не загрузится — ей нужен 64-битный адрес.
           sed -i 's/^reactNativeArchitectures=.*/reactNativeArchitectures=armeabi-v7a,arm64-v8a/' android/gradle.properties
           grep -q 'reactNativeArchitectures=armeabi-v7a,arm64-v8a' android/gradle.properties
 

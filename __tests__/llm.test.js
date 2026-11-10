@@ -7,10 +7,9 @@ jest.mock('react-native', () => ({
   },
 }), { virtual: true });
 
-const MODEL = 'qwen3-4b-q5_k_m.gguf';
+const MODEL = 'chiron-0.6b-q4_k_m.gguf';
 const DEST = 'file:///mock-docs/' + MODEL;
-const DOWNLOAD = 'file:///storage/emulated/0/Download/' + MODEL;
-const BIG = 2800000000;
+const BIG = 400000000;
 
 function absent() { return { exists: false, isDirectory: false, size: 0 }; }
 function present() { return { exists: true, isDirectory: false, size: BIG }; }
@@ -30,7 +29,7 @@ function fresh() {
   picker.getDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
   llama.initLlama.mockReset();
   const llm = require('../lib/llm');
-  llm.setChironServer({ local: true, url: '', key: '' });
+  llm.setChironServer({ url: '', key: '' });
   return { llm, FS, llama, picker };
 }
 
@@ -45,105 +44,74 @@ describe('cleanAnswer', () => {
 });
 
 describe('askChiron', () => {
-  test('копия в документах: init с mlock и GPU, ответ без think', async () => {
+  test('готовый файл: CPU, mmap, без think, второй вопрос без повторной загрузки', async () => {
     const { llm, FS, llama } = fresh();
     FS.getInfoAsync.mockImplementation(async (uri) => (uri === DEST ? present() : absent()));
-    const completion = jest.fn(async () => ({ text: '<think>ход</think>Ложись раньше.' }));
+    const deltas = [];
+    const completion = jest.fn(async (params, cb) => {
+      if (cb) cb({ token: 'Ло' });
+      return { text: '<think>ход</think>Ложись раньше.' };
+    });
     llama.initLlama.mockResolvedValue({ completion });
-    await expect(llm.askChiron('Как спать?')).resolves.toBe('Ложись раньше.');
-    expect(llama.initLlama).toHaveBeenCalledTimes(1);
+    await expect(llm.askChiron('Как спать?', { onDelta: (t) => deltas.push(t) })).resolves.toBe('Ложись раньше.');
+    expect(deltas).toEqual(['Ло']);
     expect(llama.initLlama).toHaveBeenCalledWith(expect.objectContaining({
-      model: DEST, use_mlock: true, n_ctx: 2048, n_gpu_layers: 99,
+      model: DEST, use_mlock: false, use_mmap: true, n_ctx: 2048, n_threads: 4, n_gpu_layers: 0,
     }));
     const arg = completion.mock.calls[0][0];
-    expect(arg.n_predict).toBe(120);
-    expect(arg.temperature).toBe(0.5);
-    expect(arg.stop).toEqual(['</s>', 'user:', 'assistant:']);
-    expect(arg.messages[0].role).toBe('system');
-    expect(arg.messages[0].content).toMatch(/Хирон/);
+    expect(arg.enable_thinking).toBe(false);
+    expect(arg.messages[0].content).toMatch(/наставник Epimely/);
     expect(arg.messages[1]).toEqual({ role: 'user', content: 'Как спать?' });
     llama.initLlama.mockClear();
     await expect(llm.askChiron('Ещё')).resolves.toBe('Ложись раньше.');
     expect(llama.initLlama).not.toHaveBeenCalled();
   });
 
-  test('если mlock/GPU не встали, повтор на CPU', async () => {
+  test('нет файла: качает с Hugging Face, при ошибке — зеркало GitHub', async () => {
     const { llm, FS, llama } = fresh();
-    FS.getInfoAsync.mockImplementation(async (uri) => (uri === DEST ? present() : absent()));
-    llama.initLlama.mockRejectedValueOnce(new Error('mlock')).mockResolvedValueOnce({
-      completion: async () => ({ content: 'Ответ с CPU.' }),
-    });
-    await expect(llm.askChiron('?')).resolves.toBe('Ответ с CPU.');
-    expect(llama.initLlama).toHaveBeenNthCalledWith(2, expect.objectContaining({ use_mlock: false, n_gpu_layers: 0, n_ctx: 2048, model: DEST }));
+    let downloaded = false;
+    FS.getInfoAsync.mockImplementation(async (uri) => (uri === DEST && downloaded ? present() : absent()));
+    FS.createDownloadResumable.mockImplementation((url, dest) => ({
+      downloadAsync: jest.fn(async () => {
+        if (url.indexOf('huggingface.co') !== -1) throw new Error('hf');
+        downloaded = true;
+        return { uri: dest };
+      }),
+      resumeAsync: jest.fn(),
+      savable: () => ({ url, resumeData: '1' }),
+    }));
+    llama.initLlama.mockResolvedValue({ completion: async () => ({ text: 'С зеркала.' }) });
+    await expect(llm.askChiron('?')).resolves.toBe('С зеркала.');
+    const urls = FS.createDownloadResumable.mock.calls.map((c) => c[0]);
+    expect(urls[0]).toBe('https://huggingface.co/MaksimSun/chiron-gguf/resolve/main/chiron-0.6b-q4_k_m.gguf');
+    expect(urls[1]).toBe('https://github.com/argunov250-del/bio-age/releases/download/android-latest/chiron.gguf');
+    expect(llama.initLlama.mock.calls[0][0].n_gpu_layers).toBe(0);
   });
 
-  test('файл в Загрузках копируется в документы приложения', async () => {
+  test('оба адреса недоступны — ошибка без initLlama', async () => {
     const { llm, FS, llama } = fresh();
-    let copied = false;
-    FS.copyAsync.mockImplementation(async () => { copied = true; });
-    FS.getInfoAsync.mockImplementation(async (uri) => {
-      if (uri === DEST) return copied ? present() : absent();
-      if (uri === DOWNLOAD) return present();
-      return absent();
-    });
-    llama.initLlama.mockResolvedValue({ completion: async () => ({ text: 'Скопировано.' }) });
-    await expect(llm.askChiron('?')).resolves.toBe('Скопировано.');
-    expect(FS.copyAsync).toHaveBeenCalledWith({ from: DOWNLOAD, to: DEST });
-    expect(llama.initLlama.mock.calls[0][0].model).toBe(DEST);
-  });
-
-  test('нет файла и выбор отменён — detail с путём, модель не грузится', async () => {
-    const { llm, FS, llama, picker } = fresh();
     FS.getInfoAsync.mockResolvedValue(absent());
-    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
-    let caught;
-    try { await llm.askChiron('?'); } catch (e) { caught = e; }
-    expect(caught && caught.message).toBe('Не получилось ответить. Попробуй ещё раз.');
-    expect(caught.detail).toMatch(/Нет файла/);
-    expect(caught.detail).toMatch(/qwen3-4b-q5_k_m\.gguf/);
-    expect(picker.getDocumentAsync).toHaveBeenCalled();
-    expect(llama.initLlama).not.toHaveBeenCalled();
-    expect(err).toHaveBeenCalled();
-    err.mockRestore();
-  });
-
-  test('GPU и CPU оба упали — в detail обе причины', async () => {
-    const { llm, FS, llama } = fresh();
-    FS.getInfoAsync.mockImplementation(async (uri) => (uri === DEST ? present() : absent()));
-    llama.initLlama.mockRejectedValueOnce(new Error('opencl q5')).mockRejectedValueOnce(new Error('no mlock'));
+    FS.createDownloadResumable.mockImplementation(() => { throw new Error('сеть'); });
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});
     let caught;
     try { await llm.askChiron('?'); } catch (e) { caught = e; }
-    expect(caught.detail).toMatch(/opencl q5/);
-    expect(caught.detail).toMatch(/no mlock/);
-    expect(log).toHaveBeenCalled();
+    expect(caught.detail).toMatch(/сеть/);
+    expect(llama.initLlama).not.toHaveBeenCalled();
     log.mockRestore();
-  });
-
-  test('выбранный файл копируется в документы, исходник не удаляется', async () => {
-    const { llm, FS, llama, picker } = fresh();
-    let copied = false;
-    const pickedUri = 'content://downloads/qwen.gguf';
-    picker.getDocumentAsync.mockResolvedValue({ canceled: false, assets: [{ uri: pickedUri }] });
-    FS.copyAsync.mockImplementation(async () => { copied = true; });
-    FS.getInfoAsync.mockImplementation(async (uri) => (uri === DEST && copied ? present() : absent()));
-    llama.initLlama.mockResolvedValue({ completion: async () => ({ text: 'Из выбора.' }) });
-    await expect(llm.askChiron('?')).resolves.toBe('Из выбора.');
-    expect(FS.copyAsync).toHaveBeenCalledWith({ from: pickedUri, to: DEST });
-    expect(FS.deleteAsync).not.toHaveBeenCalled();
-    expect(llama.initLlama.mock.calls[0][0].model).toBe(DEST);
   });
 });
 
 describe('сервер Хирона', () => {
   afterEach(() => { delete global.fetch; });
-  test('без адреса — офлайн, локальная модель не стартует', async () => {
+  test('заданный адрес идёт на сервер, а не в llama.rn', async () => {
     const { llm, llama } = fresh();
-    llm.setChironServer({ local: false, url: '', key: '' });
+    llm.setChironServer({ url: 'http://chiron.test', key: 'k' });
+    global.fetch = jest.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }));
     let caught;
     try { await llm.askChiron('Как спать?'); } catch (e) { caught = e; }
     expect(caught.offline).toBe(true);
     expect(llama.initLlama).not.toHaveBeenCalled();
+    expect(global.fetch.mock.calls[0][0]).toBe('http://chiron.test/v1/chat/completions');
   });
   test('ответ сервера очищается от think и уходит с ключом', async () => {
     const { llm } = fresh();
@@ -152,7 +120,36 @@ describe('сервер Хирона', () => {
     await expect(llm.askChiron('Как спать?')).resolves.toBe('Ложись раньше.');
     const opts = global.fetch.mock.calls[0][1];
     expect(opts.headers.Authorization).toBe('Bearer k');
-    expect(JSON.parse(opts.body).messages[1]).toEqual({ role: 'user', content: 'Как спать?' });
+    const body = JSON.parse(opts.body);
+    expect(body.stream).toBe(true);
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(body.messages[0].content).toMatch(/наставник Epimely/);
+    expect(body.messages[1]).toEqual({ role: 'user', content: 'Как спать?' });
+    expect(opts.signal).toBeTruthy();
     expect(global.fetch.mock.calls[0][0]).toBe('http://chiron.test/v1/chat/completions');
+  });
+  test('поток сервера отдаёт токены, обрыв через 60 секунд', async () => {
+    const { llm } = fresh();
+    llm.setChironServer({ url: 'http://chiron.test', key: '' });
+    const deltas = [];
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      text: async () => 'data: {"choices":[{"delta":{"content":"Ло"}}]}\n\ndata: [DONE]\n',
+    }));
+    await expect(llm.askChiron('?', { onDelta: (t) => deltas.push(t) })).resolves.toBe('Ло');
+    expect(deltas).toEqual(['Ло']);
+    jest.useFakeTimers();
+    global.fetch = jest.fn((_url, opts) => new Promise((_resolve, reject) => {
+      opts.signal.addEventListener('abort', () => {
+        const e = new Error('aborted');
+        e.name = 'AbortError';
+        reject(e);
+      });
+    }));
+    const pending = llm.askChiron('?');
+    const assertion = expect(pending).rejects.toMatchObject({ offline: true, detail: 'Сервер Хирона не ответил вовремя' });
+    await jest.advanceTimersByTimeAsync(60000);
+    await assertion;
+    jest.useRealTimers();
   });
 });

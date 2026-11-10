@@ -11,9 +11,12 @@ if [ -z "$MODEL_PATH" ] || [ ! -f "$MODEL_PATH" ]; then
   python3 - << 'PY'
 import os
 from huggingface_hub import hf_hub_download, list_repo_files
-repo = os.environ.get("GGUF_REPO", "MaksimSun/chiron-qwen3-gguf")
+repo = os.environ.get("GGUF_REPO", "MaksimSun/chiron-gguf")
+want = os.environ.get("GGUF_FILE", "chiron-0.6b-q4_k_m.gguf")
 files = [f for f in list_repo_files(repo) if f.endswith(".gguf")]
-prefer = [f for f in files if "Q4_K_M" in f or "q4_k_m" in f]
+prefer = [f for f in files if f == want or f.endswith("/" + want)]
+if not prefer:
+    prefer = [f for f in files if "q4_k_m" in f.lower()]
 name = (prefer or files)[0]
 path = hf_hub_download(repo_id=repo, filename=name, local_dir="/models")
 open("/models/path.txt", "w", encoding="utf-8").write(path)

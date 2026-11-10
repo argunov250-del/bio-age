@@ -7,9 +7,9 @@ import path from 'path';
 import { makeEnv, answerQuestion } from '../lib/coach/qaEngine';
 import { QA } from '../lib/coach/qa';
 import { SCENARIOS } from '../lib/coach/scenarios';
+import { CHIRON_SYSTEM as SYSTEM } from '../lib/chironPersona';
 
 const OUT = path.join(__dirname, 'data');
-const SYSTEM = 'Ты Хирон, спокойный наставник Epimely. По умолчанию отвечай по-русски; если человек пишет по-английски, отвечай по-английски. Коротко, одно–три предложения, без списков. Не ставь диагнозов и не назначай лечение. Если в ответе есть источник, назови его. При тревожном симптоме скажи остановиться и обратиться к врачу или в экстренную службу.';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
 const hash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };

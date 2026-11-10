@@ -14,7 +14,8 @@ RUN git clone --depth 1 https://github.com/ggerganov/llama.cpp.git \
     && cp llama.cpp/build/bin/llama-server /usr/local/bin/llama-server
 WORKDIR /app
 COPY proxy.js limit.js entrypoint.sh /app/
-ENV GGUF_REPO=MaksimSun/chiron-qwen3-gguf
+ENV GGUF_REPO=MaksimSun/chiron-gguf
+ENV GGUF_FILE=chiron-0.6b-q4_k_m.gguf
 ENV CTX=1024
 ENV THREADS=4
 ENV UPSTREAM=http://127.0.0.1:8000
