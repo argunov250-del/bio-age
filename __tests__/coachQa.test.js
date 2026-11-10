@@ -111,7 +111,16 @@ async function setup(lang, theme, model) {
   jest.resetModules();
   const host = (name) => function Host(props) { return React.createElement(name, props, props.children); };
   const gp = require('./growthUiHarness');
-  jest.doMock('react-native', () => gp.makeRN(lang, host), { virtual: true });
+  const rn = gp.makeRN(lang, host);
+  const keys = [];
+  rn.Keyboard = {
+    dismiss() {},
+    addListener: (ev, fn) => {
+      keys.push({ ev, fn });
+      return { remove() { const i = keys.findIndex((x) => x.fn === fn); if (i >= 0) keys.splice(i, 1); } };
+    },
+  };
+  jest.doMock('react-native', () => rn, { virtual: true });
   jest.doMock('react-native-svg', () => gp.hostProxy(host), { virtual: true });
   jest.doMock('react-native-safe-area-context', () => ({ __esModule: true, SafeAreaView: host('SafeAreaView'), useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }), { virtual: true });
   const mem = {};
@@ -155,15 +164,18 @@ async function setup(lang, theme, model) {
     await TR.act(async () => { b.props.onPress(); });
   };
   const wait = async (ms) => { await TR.act(async () => { await new Promise((res) => setTimeout(res, ms)); }); };
-  return { TR, r, text, pressText, findText, wait, errors, tr: i18n.tr, q: (id) => (lang === 'ru' ? QA_BY_ID[id].q.ru : QA_BY_ID[id].q.en), QA_BY_ID, lang };
+  return { TR, r, text, pressText, findText, wait, errors, keys, tr: i18n.tr, q: (id) => (lang === 'ru' ? QA_BY_ID[id].q.ru : QA_BY_ID[id].q.en), QA_BY_ID, lang };
 }
 
 describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']])('экран Хирона (%s, %s)', (lang, theme) => {
   afterEach(() => { jest.restoreAllMocks(); });
-  test('нет TextInput в чате; подсказки и «Все темы» на месте, кнопки «Мне плохо» нет', async () => {
+  test('поле ввода и подсказки на месте, кнопки «Все темы» и «Мне плохо» нет', async () => {
     const t = await setup(lang, theme);
-    expect(t.r.root.findAll((n) => n.type === 'TextInput')).toHaveLength(0);
-    expect(t.findText(t.tr('Все темы'))).toBeTruthy();
+    const input = t.r.root.findAll((n) => n.type === 'TextInput');
+    expect(input).toHaveLength(1);
+    expect(input[0].props.placeholder).toBe(t.tr('Напишите Хирону…'));
+    expect(t.findText(t.tr('Отправить'))).toBeTruthy();
+    expect(t.text()).not.toContain(t.tr('Все темы'));
     expect(t.text()).not.toMatch(/Мне плохо|I feel unwell/);
     expect(t.text()).toContain(t.tr('Хирон даёт общие советы и не заменяет врача.'));
     expect(t.findText(t.q('sleep_how_much'))).toBeTruthy();
@@ -187,37 +199,51 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
     expect(y).toContain('AASM');
     expect(t.errors).toEqual([]);
   });
-  test('«Все темы»: разделы -> вопросы; поиск только фильтрует список; выбор вопроса отвечает', async () => {
+  test('своё сообщение уходит Хирону, ответ остаётся в ленте', async () => {
     const t = await setup(lang, theme);
-    const inChips = (id) => t.r.root.findAll((n) => n.type === 'Text' && n.props.children === t.q(id)).length;
-    const chipCount = inChips('app_score');
-    await t.pressText(t.tr('Все темы'));
-    expect(t.r.root.findAll((n) => n.type === 'TextInput')).toHaveLength(1);
-    expect(t.text()).toContain(lang === 'ru' ? 'Шаги и активность' : 'Steps and activity');
-    expect(t.text()).not.toContain('cycle');
-    // у каждого раздела есть число вопросов
-    const secCount = t.r.root.findAll((n) => n.type === 'Text' && /^\d+$/.test(String(n.props.children)));
-    expect(secCount.length).toBeGreaterThanOrEqual(5);
     const input = t.r.root.findAll((n) => n.type === 'TextInput')[0];
-    await t.TR.act(async () => { input.props.onChangeText(lang === 'ru' ? 'фазы' : 'stages'); });
-    expect(t.findText(t.q('sleep_phases'))).toBeTruthy();
-    expect(t.findText('PRO')).toBeTruthy();
-    expect(inChips('app_score')).toBe(chipCount); // в списке окна его нет (остался только чип под чатом, если он там был)
-    await t.TR.act(async () => { input.props.onChangeText('qqqq'); });
-    expect(t.text()).toContain(t.tr('Ничего не найдено'));
-    await t.TR.act(async () => { input.props.onChangeText(lang === 'ru' ? 'недосып' : 'sleep debt'); });
-    await t.pressText(t.q('sleep_debt'));
+    await t.TR.act(async () => { input.props.onChangeText(lang === 'ru' ? 'Как лучше спать?' : 'How should I sleep?'); });
+    await t.pressText(t.tr('Отправить'));
     await t.wait(1200);
-    expect(t.r.root.findAll((n) => n.type === 'TextInput')).toHaveLength(0); // окно закрыто
-    expect(t.text()).toContain(t.q('sleep_debt'));
+    const x = t.text();
+    expect(x).toContain(lang === 'ru' ? 'Как лучше спать?' : 'How should I sleep?');
+    expect(x).toContain('Ложись');
+    expect(x).toContain('экраны');
+    expect(t.r.root.findAll((n) => n.type === 'TextInput')).toHaveLength(1);
+    expect(t.errors).toEqual([]);
+  });
+  test('клавиатура поднимает поле и не складывает его с панелью вкладок', async () => {
+    const t = await setup(lang, theme);
+    const { composerInset } = require(path.join(ROOT, 'lib/screens/CoachScreen'));
+    const { DOCK, SIZES } = require(path.join(ROOT, 'lib/theme'));
+    const closed = DOCK.height + DOCK.lift + SIZES.gap;
+    expect(composerInset(0, true, 0)).toBe(closed);
+    expect(composerInset(320, true, 40)).toBe(320 + SIZES.gap);
+    expect(composerInset(320, true, 40)).toBeLessThan(closed + 320);
+    const box = () => t.r.root.findByProps({ testID: 'coach-composer' });
+    const padOf = () => [].concat(box().props.style).reduce((a, x) => Object.assign(a, x || {}), {}).paddingBottom;
+    expect(padOf()).toBe(composerInset(0, true, 0));
+    await t.TR.act(async () => {
+      t.keys.filter((k) => k.ev === 'keyboardDidShow').forEach((k) => k.fn({ endCoordinates: { height: 320 } }));
+    });
+    expect(padOf()).toBe(320 + SIZES.gap);
+    await t.TR.act(async () => {
+      t.keys.filter((k) => k.ev === 'keyboardDidHide').forEach((k) => k.fn());
+    });
+    expect(padOf()).toBe(composerInset(0, true, 0));
+    expect(t.errors).toEqual([]);
   });
 });
 
-test('модель не скачалась: ответ каталога и серая причина', async () => {
+test('модель не скачана: каталог и подсказка, без скачивания', async () => {
   const t = await setup('ru', 'light', 'fail');
+  const FS = require('expo-file-system/legacy');
+  FS.createDownloadResumable.mockClear();
   await t.pressText(t.q('sleep_how_much'));
   await t.wait(1200);
   const x = t.text();
   expect(x).toMatch(/Короткий|Второй/);
-  expect(x).toContain('сеть');
+  expect(x).toContain('Скачайте модель в настройках, чтобы Хирон отвечал свободно');
+  expect(FS.createDownloadResumable).not.toHaveBeenCalled();
+  expect(t.errors).toEqual([]);
 });

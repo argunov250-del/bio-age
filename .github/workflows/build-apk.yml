@@ -10,6 +10,8 @@ jobs:
     # APK собирается при пуше с префиксом «Update» / «Fix» или вручную через Run workflow.
     if: github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'Update') || startsWith(github.event.head_commit.message, 'Fix')
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
         with:
@@ -62,6 +64,8 @@ jobs:
               ...(c.expo.android || {}),
               package: 'com.bioage.proto',
               userInterfaceStyle: 'automatic',
+              // Окно сжимается над клавиатурой. На edge-to-edge этого мало: отступ считает useKeyboardHeight.
+              softwareKeyboardLayoutMode: 'resize',
               adaptiveIcon: {
                 foregroundImage: './assets/adaptive-icon.png',
                 monochromeImage: './assets/adaptive-icon-mono.png',
@@ -138,7 +142,7 @@ jobs:
         working-directory: app
         run: |
           npm install
-          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-document-picker expo-file-system expo-sharing expo-notifications expo-haptics react-native-view-shot expo-location expo-alternate-app-icons expo-system-ui react-native-android-widget llama.rn
+          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-document-picker expo-file-system expo-sharing expo-notifications expo-haptics react-native-view-shot expo-location expo-network expo-alternate-app-icons expo-system-ui react-native-android-widget llama.rn
           npm install fflate@0.8.3
 
       - name: Prebuild Android project
@@ -150,6 +154,39 @@ jobs:
           # приложение откроется, но модель не загрузится — ей нужен 64-битный адрес.
           sed -i 's/^reactNativeArchitectures=.*/reactNativeArchitectures=armeabi-v7a,arm64-v8a/' android/gradle.properties
           grep -q 'reactNativeArchitectures=armeabi-v7a,arm64-v8a' android/gradle.properties
+
+      - name: Sign release with the committed keystore
+        working-directory: app
+        run: |
+          # Один и тот же ключ на каждую сборку: обновление ставится поверх, без удаления.
+          # Не пересоздавать android-signing/epimely-release.keystore — подпись сменится.
+          cp ../src/android-signing/epimely-release.keystore android/app/epimely-release.keystore
+          node << 'JS'
+          const fs = require('fs');
+          const file = 'android/app/build.gradle';
+          let g = fs.readFileSync(file, 'utf8');
+          if (!g.includes("storeFile file('epimely-release.keystore')")) {
+            const at = g.indexOf('signingConfigs');
+            const brace = g.indexOf('{', at);
+            if (at < 0 || brace < 0) throw new Error('signingConfigs block not found');
+            const block = `
+        release {
+            storeFile file('epimely-release.keystore')
+            storePassword 'epimely-test'
+            keyAlias 'epimely'
+            keyPassword 'epimely-test'
+        }`;
+            g = g.slice(0, brace + 1) + block + g.slice(brace + 1);
+          }
+          const types = g.indexOf('buildTypes');
+          const rel = types < 0 ? -1 : g.indexOf('release {', types);
+          const needle = 'signingConfig signingConfigs.debug';
+          const hit = rel < 0 ? -1 : g.indexOf(needle, rel);
+          if (hit < 0) throw new Error('release signingConfig not found');
+          g = g.slice(0, hit) + 'signingConfig signingConfigs.release' + g.slice(hit + needle.length);
+          if (!g.includes('signingConfig signingConfigs.release')) throw new Error('release signing was not applied');
+          fs.writeFileSync(file, g);
+          JS
 
       - name: Build release APK
         working-directory: app/android
@@ -165,3 +202,8 @@ jobs:
           name: epimely-apk
           path: out/epimely.apk
           if-no-files-found: error
+
+      - name: Publish APK to android-latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload android-latest out/epimely.apk --clobber --repo "${{ github.repository }}"

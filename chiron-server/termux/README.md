@@ -1,6 +1,6 @@
 # Termux: запасной llama-server на телефоне
 
-Приложению этот путь не нужен. По умолчанию оно само качает `chiron-0.6b-q4_k_m.gguf` и считает его через llama.rn. Termux имеет смысл, только если хочется отдельный процесс `llama-server` и секрет `CHIRON_URL`.
+Приложению этот путь не нужен. По умолчанию модель качается из профиля («Хирон офлайн») и считается через llama.rn. Termux имеет смысл, только если хочется отдельный процесс `llama-server` и секрет `CHIRON_URL`.
 
 1. В Termux: `pkg install git cmake clang` и соберите `llama-server` из [llama.cpp](https://github.com/ggerganov/llama.cpp), либо поставьте готовый пакет, если он есть в вашем репозитории.
 2. Положите `chiron-0.6b-q4_k_m.gguf` в домашний каталог Termux.
