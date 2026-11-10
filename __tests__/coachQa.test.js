@@ -118,6 +118,14 @@ async function setup(lang, theme) {
   jest.doMock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: async (k) => (k in mem ? mem[k] : null), setItem: async (k, v) => { mem[k] = String(v); }, removeItem: async (k) => { delete mem[k]; } } }), { virtual: true });
   jest.doMock('expo-haptics', () => ({ __esModule: true, impactAsync: async () => {}, notificationAsync: async () => {}, selectionAsync: async () => {}, ImpactFeedbackStyle: {}, NotificationFeedbackType: {} }), { virtual: true });
   jest.doMock('react-native-health-connect', () => ({ __esModule: true }), { virtual: true });
+  // Модель в тестах не грузится: копия «уже в документах», completion отдаёт ответ со скрытым <think>.
+  const FS = require('expo-file-system/legacy');
+  FS.documentDirectory = 'file:///mock-docs/';
+  FS.getInfoAsync.mockReset();
+  FS.getInfoAsync.mockImplementation(async (uri) => ({ exists: uri === 'file:///mock-docs/qwen3-4b-q5_k_m.gguf', isDirectory: false, size: 2800000000 }));
+  const llama = require('llama.rn');
+  llama.initLlama.mockReset();
+  llama.initLlama.mockImplementation(async () => ({ completion: async () => ({ text: '<think>скрыто</think>Ложись и вставай в одно время. За час до сна убери экраны.' }) }));
   const errors = [];
   jest.spyOn(console, 'error').mockImplementation((...a) => { const m = a.map(String).join(' '); if (!/react-test-renderer is deprecated/.test(m)) errors.push(m); });
   const TR = require('react-test-renderer');
@@ -161,7 +169,11 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
     await t.wait(1200);
     const x = t.text();
     expect(x).toContain(t.q('sleep_how_much'));
-    expect(x).toMatch(lang === 'ru' ? /Короткий|Второй/ : /Short|Second/);
+    // Кинетический текст режет фразу по словам, поэтому сверяем слова ответа модели, не каталога.
+    expect(x).toContain('Ложись');
+    expect(x).toContain('экраны');
+    expect(x).not.toContain('скрыто');
+    expect(x).not.toContain('<think>');
     expect(x).not.toMatch(/Подробный разбор|Detailed breakdown/);
     await t.pressText(t.tr('Подробнее'));
     const y = t.text();

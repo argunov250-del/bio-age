@@ -2,6 +2,7 @@
 // чтобы конфиг не влиял на сборку приложения (CI копирует лишь App.js, lib и assets).
 module.exports = {
   testEnvironment: 'node',
+  setupFiles: ['<rootDir>/__tests__/setupNative.js'],
   moduleNameMapper: { '\\.png$': '<rootDir>/__tests__/pngStub.js' },
   testMatch: ['<rootDir>/__tests__/**/*.test.js'],
   transform: {

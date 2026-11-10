@@ -68,6 +68,10 @@ jobs:
                 backgroundColor: '#11212D'
               },
               permissions: [
+                // Чтение модели из «Загрузок». На Android 11+ произвольный .gguf всё равно
+                // может быть закрыт: тогда экран один раз просит выбрать файл (см. lib/llm.js).
+                'android.permission.READ_EXTERNAL_STORAGE',
+                'android.permission.MANAGE_EXTERNAL_STORAGE',
                 'android.permission.POST_NOTIFICATIONS',
                 'android.permission.RECEIVE_BOOT_COMPLETED',
                 'android.permission.VIBRATE',
@@ -98,12 +102,15 @@ jobs:
               blockedPermissions: [
                 'android.permission.ACCESS_BACKGROUND_LOCATION',
                 'android.permission.SYSTEM_ALERT_WINDOW',
-                'android.permission.READ_EXTERNAL_STORAGE',
                 'android.permission.WRITE_EXTERNAL_STORAGE'
               ]
             };
+            // llama.rn с v0.10 требует новую архитектуру. OpenCL в манифесте — required=false.
+            c.expo.newArchEnabled = true;
             c.expo.plugins = [
               ...(c.expo.plugins || []),
+              ['llama.rn', { enableOpenCLAndHexagon: true, forceCxx20: false, enableEntitlements: false }],
+              './plugins/withLargeHeap',
               'react-native-health-connect',
               'expo-notifications',
               // Значки A–D (светлые/тёмные, монохромные) и activity-alias; нативный модуль — expo-alternate-app-icons (без его плагина).
@@ -112,7 +119,7 @@ jobs:
               ['react-native-android-widget', require('./plugins/widgetsConfig.js')],
               // Системный экран — только фон: логотип рисует экран загрузки приложения.
               ['expo-splash-screen', { image: './assets/splash-blank.png', backgroundColor: '#06141B', imageWidth: 1 }],
-              ['expo-build-properties', { android: { minSdkVersion: 26 } }]
+              ['expo-build-properties', { android: { minSdkVersion: 26, extraProguardRules: '-keep class com.rnllama.** { *; }' } }]
             ];
             fs.writeFileSync('app.json', JSON.stringify(c, null, 2));
           "
@@ -121,7 +128,7 @@ jobs:
         working-directory: app
         run: |
           npm install
-          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-document-picker expo-file-system expo-sharing expo-notifications expo-haptics react-native-view-shot expo-location expo-alternate-app-icons expo-system-ui react-native-android-widget
+          npx expo install react-native-health-connect expo-build-properties expo-splash-screen react-native-svg @react-native-async-storage/async-storage react-native-safe-area-context expo-document-picker expo-file-system expo-sharing expo-notifications expo-haptics react-native-view-shot expo-location expo-alternate-app-icons expo-system-ui react-native-android-widget llama.rn
           npm install fflate@0.8.3
 
       - name: Prebuild Android project
@@ -129,6 +136,8 @@ jobs:
         run: |
           npx expo prebuild --platform android --no-install
           # Только ARM (все реальные телефоны, включая старые 32-битные): APK заметно меньше.
+          # Нативные .so llama.rn есть лишь для arm64-v8a (и x86_64): на 32-битном телефоне
+          # приложение откроется, но модель не загрузится — ей нужен 64-битный адрес и ~3 ГБ.
           sed -i 's/^reactNativeArchitectures=.*/reactNativeArchitectures=armeabi-v7a,arm64-v8a/' android/gradle.properties
           grep -q 'reactNativeArchitectures=armeabi-v7a,arm64-v8a' android/gradle.properties
 
