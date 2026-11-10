@@ -169,11 +169,9 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
     await t.wait(1200);
     const x = t.text();
     expect(x).toContain(t.q('sleep_how_much'));
-    // Кинетический текст режет фразу по словам, поэтому сверяем слова ответа модели, не каталога.
-    expect(x).toContain('Ложись');
-    expect(x).toContain('экраны');
-    expect(x).not.toContain('скрыто');
-    expect(x).not.toContain('<think>');
+    // Сервер не настроен: пузырь — короткий ответ каталога, не локальная модель.
+    expect(x).toMatch(lang === 'ru' ? /Короткий|Второй/ : /Short|Second/);
+    expect(x).toContain(lang === 'ru' ? 'Ответ из каталога.' : 'Answer from the catalog.');
     expect(x).not.toMatch(/Подробный разбор|Detailed breakdown/);
     await t.pressText(t.tr('Подробнее'));
     const y = t.text();
@@ -208,16 +206,12 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
   });
 });
 
-test('сбой модели: серая строка под пузырём с причиной', async () => {
+test('нет сервера: ответ каталога и серая строка, без загрузки модели', async () => {
   const t = await setup('ru', 'light');
-  const FS = require('expo-file-system/legacy');
-  FS.getInfoAsync.mockImplementation(async () => ({ exists: false, isDirectory: false, size: 0 }));
-  const picker = require('expo-document-picker');
-  picker.getDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
   await t.pressText(t.q('sleep_how_much'));
   await t.wait(1200);
   const x = t.text();
-  expect(x).toContain('Попробуй');
-  expect(x).toContain('Нет файла');
-  expect(x).toContain('qwen3-4b-q5_k_m.gguf');
+  expect(x).toMatch(/Короткий|Второй/);
+  expect(x).toContain('Ответ из каталога.');
+  expect(x).not.toContain('qwen3-4b');
 });

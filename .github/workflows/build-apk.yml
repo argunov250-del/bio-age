@@ -122,7 +122,19 @@ jobs:
               ['expo-build-properties', { android: { minSdkVersion: 26, extraProguardRules: '-keep class com.rnllama.** { *; }' } }]
             ];
             fs.writeFileSync('app.json', JSON.stringify(c, null, 2));
+            // Секреты сборки. Пустой URL не трогаем: приложение остаётся на каталоге.
+            const url = process.env.CHIRON_URL || '';
+            const key = process.env.CHIRON_KEY || '';
+            if (url) {
+              fs.writeFileSync('lib/chironConfig.js',
+                'export const CHIRON_URL = ' + JSON.stringify(url) + ';\\n' +
+                'export const CHIRON_KEY = ' + JSON.stringify(key) + ';\\n' +
+                'export const CHIRON_LOCAL = false;\\n');
+            }
           "
+        env:
+          CHIRON_URL: ${{ secrets.CHIRON_URL }}
+          CHIRON_KEY: ${{ secrets.CHIRON_KEY }}
 
       - name: Install dependencies
         working-directory: app

@@ -29,7 +29,9 @@ function fresh() {
   picker.getDocumentAsync.mockReset();
   picker.getDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
   llama.initLlama.mockReset();
-  return { llm: require('../lib/llm'), FS, llama, picker };
+  const llm = require('../lib/llm');
+  llm.setChironServer({ local: true, url: '', key: '' });
+  return { llm, FS, llama, picker };
 }
 
 describe('cleanAnswer', () => {
@@ -130,5 +132,27 @@ describe('askChiron', () => {
     expect(FS.copyAsync).toHaveBeenCalledWith({ from: pickedUri, to: DEST });
     expect(FS.deleteAsync).not.toHaveBeenCalled();
     expect(llama.initLlama.mock.calls[0][0].model).toBe(DEST);
+  });
+});
+
+describe('сервер Хирона', () => {
+  afterEach(() => { delete global.fetch; });
+  test('без адреса — офлайн, локальная модель не стартует', async () => {
+    const { llm, llama } = fresh();
+    llm.setChironServer({ local: false, url: '', key: '' });
+    let caught;
+    try { await llm.askChiron('Как спать?'); } catch (e) { caught = e; }
+    expect(caught.offline).toBe(true);
+    expect(llama.initLlama).not.toHaveBeenCalled();
+  });
+  test('ответ сервера очищается от think и уходит с ключом', async () => {
+    const { llm } = fresh();
+    llm.setChironServer({ local: false, url: 'http://chiron.test', key: 'k' });
+    global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '<think>x</think>Ложись раньше.' } }] }) }));
+    await expect(llm.askChiron('Как спать?')).resolves.toBe('Ложись раньше.');
+    const opts = global.fetch.mock.calls[0][1];
+    expect(opts.headers.Authorization).toBe('Bearer k');
+    expect(JSON.parse(opts.body).messages[1]).toEqual({ role: 'user', content: 'Как спать?' });
+    expect(global.fetch.mock.calls[0][0]).toBe('http://chiron.test/v1/chat/completions');
   });
 });

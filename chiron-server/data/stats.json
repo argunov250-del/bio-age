@@ -1,0 +1,12 @@
+{
+  "examples": 1278,
+  "train": 1156,
+  "val": 122,
+  "safetyRows": 36,
+  "qaRows": 1242,
+  "sources": [
+    "lib/coach/qa",
+    "lib/coach/qaEngine.js answerQuestion",
+    "lib/coach/scenarios (sensitive, cap_diagnose)"
+  ]
+}
