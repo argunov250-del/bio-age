@@ -207,3 +207,17 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
     expect(t.text()).toContain(t.q('sleep_debt'));
   });
 });
+
+test('сбой модели: серая строка под пузырём с причиной', async () => {
+  const t = await setup('ru', 'light');
+  const FS = require('expo-file-system/legacy');
+  FS.getInfoAsync.mockImplementation(async () => ({ exists: false, isDirectory: false, size: 0 }));
+  const picker = require('expo-document-picker');
+  picker.getDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
+  await t.pressText(t.q('sleep_how_much'));
+  await t.wait(1200);
+  const x = t.text();
+  expect(x).toContain('Попробуй');
+  expect(x).toContain('Нет файла');
+  expect(x).toContain('qwen3-4b-q5_k_m.gguf');
+});

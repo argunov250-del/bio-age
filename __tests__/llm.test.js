@@ -90,28 +90,45 @@ describe('askChiron', () => {
     expect(llama.initLlama.mock.calls[0][0].model).toBe(DEST);
   });
 
-  test('нет файла и выбор отменён — короткая ошибка, модель не грузится', async () => {
+  test('нет файла и выбор отменён — detail с путём, модель не грузится', async () => {
     const { llm, FS, llama, picker } = fresh();
     FS.getInfoAsync.mockResolvedValue(absent());
     const err = jest.spyOn(console, 'error').mockImplementation(() => {});
-    await expect(llm.askChiron('?')).resolves.toBe('Не получилось ответить. Попробуй ещё раз.');
+    let caught;
+    try { await llm.askChiron('?'); } catch (e) { caught = e; }
+    expect(caught && caught.message).toBe('Не получилось ответить. Попробуй ещё раз.');
+    expect(caught.detail).toMatch(/Нет файла/);
+    expect(caught.detail).toMatch(/qwen3-4b-q5_k_m\.gguf/);
     expect(picker.getDocumentAsync).toHaveBeenCalled();
     expect(llama.initLlama).not.toHaveBeenCalled();
     expect(err).toHaveBeenCalled();
     err.mockRestore();
   });
 
-  test('выбранный файл копируется из кэша в документы', async () => {
+  test('GPU и CPU оба упали — в detail обе причины', async () => {
+    const { llm, FS, llama } = fresh();
+    FS.getInfoAsync.mockImplementation(async (uri) => (uri === DEST ? present() : absent()));
+    llama.initLlama.mockRejectedValueOnce(new Error('opencl q5')).mockRejectedValueOnce(new Error('no mlock'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    let caught;
+    try { await llm.askChiron('?'); } catch (e) { caught = e; }
+    expect(caught.detail).toMatch(/opencl q5/);
+    expect(caught.detail).toMatch(/no mlock/);
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  test('выбранный файл копируется в документы, исходник не удаляется', async () => {
     const { llm, FS, llama, picker } = fresh();
     let copied = false;
-    const cache = 'file:///cache/picked.gguf';
-    picker.getDocumentAsync.mockResolvedValue({ canceled: false, assets: [{ uri: cache }] });
+    const pickedUri = 'content://downloads/qwen.gguf';
+    picker.getDocumentAsync.mockResolvedValue({ canceled: false, assets: [{ uri: pickedUri }] });
     FS.copyAsync.mockImplementation(async () => { copied = true; });
     FS.getInfoAsync.mockImplementation(async (uri) => (uri === DEST && copied ? present() : absent()));
     llama.initLlama.mockResolvedValue({ completion: async () => ({ text: 'Из выбора.' }) });
     await expect(llm.askChiron('?')).resolves.toBe('Из выбора.');
-    expect(FS.copyAsync).toHaveBeenCalledWith({ from: cache, to: DEST });
-    expect(FS.deleteAsync).toHaveBeenCalledWith(cache, { idempotent: true });
+    expect(FS.copyAsync).toHaveBeenCalledWith({ from: pickedUri, to: DEST });
+    expect(FS.deleteAsync).not.toHaveBeenCalled();
     expect(llama.initLlama.mock.calls[0][0].model).toBe(DEST);
   });
 });
