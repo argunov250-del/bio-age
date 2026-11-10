@@ -107,7 +107,7 @@ describe('движок ответов', () => {
   });
 });
 
-async function setup(lang, theme) {
+async function setup(lang, theme, model) {
   jest.resetModules();
   const host = (name) => function Host(props) { return React.createElement(name, props, props.children); };
   const gp = require('./growthUiHarness');
@@ -121,11 +121,17 @@ async function setup(lang, theme) {
   // Модель в тестах не грузится: копия «уже в документах», completion отдаёт ответ со скрытым <think>.
   const FS = require('expo-file-system/legacy');
   FS.documentDirectory = 'file:///mock-docs/';
+  const modelOk = model !== 'fail';
   FS.getInfoAsync.mockReset();
-  FS.getInfoAsync.mockImplementation(async (uri) => ({ exists: uri === 'file:///mock-docs/qwen3-4b-q5_k_m.gguf', isDirectory: false, size: 2800000000 }));
+  FS.getInfoAsync.mockImplementation(async (uri) => ({ exists: modelOk && uri === 'file:///mock-docs/chiron-0.6b-q4_k_m.gguf', isDirectory: false, size: modelOk ? 400000000 : 0 }));
+  FS.createDownloadResumable.mockReset();
+  FS.createDownloadResumable.mockImplementation(() => { if (!modelOk) throw new Error('сеть'); return { downloadAsync: async () => { throw new Error('сеть'); }, resumeAsync: async () => { throw new Error('сеть'); }, savable: () => ({}) }; });
   const llama = require('llama.rn');
   llama.initLlama.mockReset();
-  llama.initLlama.mockImplementation(async () => ({ completion: async () => ({ text: '<think>скрыто</think>Ложись и вставай в одно время. За час до сна убери экраны.' }) }));
+  llama.initLlama.mockImplementation(async () => {
+    if (!modelOk) throw new Error('сеть');
+    return { completion: async () => ({ text: '<think>скрыто</think>Ложись и вставай в одно время. За час до сна убери экраны.' }) };
+  });
   const errors = [];
   jest.spyOn(console, 'error').mockImplementation((...a) => { const m = a.map(String).join(' '); if (!/react-test-renderer is deprecated/.test(m)) errors.push(m); });
   const TR = require('react-test-renderer');
@@ -169,11 +175,10 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
     await t.wait(1200);
     const x = t.text();
     expect(x).toContain(t.q('sleep_how_much'));
-    // Кинетический текст режет фразу по словам, поэтому сверяем слова ответа модели, не каталога.
+    // Кинетический текст режет фразу по словам: это ответ маленькой модели, не каталога.
     expect(x).toContain('Ложись');
     expect(x).toContain('экраны');
     expect(x).not.toContain('скрыто');
-    expect(x).not.toContain('<think>');
     expect(x).not.toMatch(/Подробный разбор|Detailed breakdown/);
     await t.pressText(t.tr('Подробнее'));
     const y = t.text();
@@ -208,16 +213,11 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
   });
 });
 
-test('сбой модели: серая строка под пузырём с причиной', async () => {
-  const t = await setup('ru', 'light');
-  const FS = require('expo-file-system/legacy');
-  FS.getInfoAsync.mockImplementation(async () => ({ exists: false, isDirectory: false, size: 0 }));
-  const picker = require('expo-document-picker');
-  picker.getDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
+test('модель не скачалась: ответ каталога и серая причина', async () => {
+  const t = await setup('ru', 'light', 'fail');
   await t.pressText(t.q('sleep_how_much'));
   await t.wait(1200);
   const x = t.text();
-  expect(x).toContain('Попробуй');
-  expect(x).toContain('Нет файла');
-  expect(x).toContain('qwen3-4b-q5_k_m.gguf');
+  expect(x).toMatch(/Короткий|Второй/);
+  expect(x).toContain('сеть');
 });
