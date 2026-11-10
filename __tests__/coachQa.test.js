@@ -213,11 +213,15 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
   });
 });
 
-test('модель не скачалась: ответ каталога и серая причина', async () => {
+test('модель не скачана: каталог и подсказка, без скачивания', async () => {
   const t = await setup('ru', 'light', 'fail');
+  const FS = require('expo-file-system/legacy');
+  FS.createDownloadResumable.mockClear();
   await t.pressText(t.q('sleep_how_much'));
   await t.wait(1200);
   const x = t.text();
   expect(x).toMatch(/Короткий|Второй/);
-  expect(x).toContain('сеть');
+  expect(x).toContain('Скачайте модель в настройках, чтобы Хирон отвечал свободно');
+  expect(FS.createDownloadResumable).not.toHaveBeenCalled();
+  expect(t.errors).toEqual([]);
 });

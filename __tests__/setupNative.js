@@ -20,6 +20,12 @@ jest.mock('expo-file-system/legacy', () => ({
   })),
 }), { virtual: true });
 
+jest.mock('expo-network', () => ({
+  __esModule: true,
+  NetworkStateType: { NONE: 'NONE', UNKNOWN: 'UNKNOWN', CELLULAR: 'CELLULAR', WIFI: 'WIFI', OTHER: 'OTHER' },
+  getNetworkStateAsync: jest.fn(async () => ({ type: 'WIFI', isConnected: true, isInternetReachable: true })),
+}), { virtual: true });
+
 jest.mock('expo-document-picker', () => ({
   __esModule: true,
   getDocumentAsync: jest.fn(async () => ({ canceled: true, assets: [] })),

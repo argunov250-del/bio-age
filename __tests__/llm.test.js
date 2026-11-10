@@ -67,37 +67,83 @@ describe('askChiron', () => {
     expect(llama.initLlama).not.toHaveBeenCalled();
   });
 
-  test('нет файла: качает с Hugging Face, при ошибке — зеркало GitHub', async () => {
+  test('нет файла: вопрос не начинает скачивание', async () => {
+    const { llm, FS, llama } = fresh();
+    FS.getInfoAsync.mockResolvedValue(absent());
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    let caught;
+    try { await llm.askChiron('?'); } catch (e) { caught = e; }
+    expect(caught.code).toBe('missing');
+    expect(FS.createDownloadResumable).not.toHaveBeenCalled();
+    expect(llama.initLlama).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
+    log.mockRestore();
+  });
+});
+
+describe('скачивание модели', () => {
+  const HF = 'https://huggingface.co/MaksimSun/chiron-gguf/resolve/main/chiron-0.6b-q4_k_m.gguf';
+  const MIRROR = 'https://github.com/argunov250-del/bio-age/releases/download/android-latest/chiron.gguf';
+
+  test('кнопка качает с Hugging Face, при ошибке — зеркало, и умеет докачку', async () => {
     const { llm, FS, llama } = fresh();
     let downloaded = false;
+    FS.readAsStringAsync.mockResolvedValueOnce(JSON.stringify({ url: HF, resumeData: 'abc' }));
     FS.getInfoAsync.mockImplementation(async (uri) => (uri === DEST && downloaded ? present() : absent()));
-    FS.createDownloadResumable.mockImplementation((url, dest) => ({
+    FS.createDownloadResumable.mockImplementation((url, dest, _opts, _progress, resume) => ({
       downloadAsync: jest.fn(async () => {
         if (url.indexOf('huggingface.co') !== -1) throw new Error('hf');
         downloaded = true;
         return { uri: dest };
       }),
-      resumeAsync: jest.fn(),
-      savable: () => ({ url, resumeData: '1' }),
+      resumeAsync: jest.fn(async () => {
+        expect(resume).toBe('abc');
+        throw new Error('hf');
+      }),
+      savable: () => ({ url, resumeData: resume || '1' }),
     }));
     llama.initLlama.mockResolvedValue({ completion: async () => ({ text: 'С зеркала.' }) });
-    await expect(llm.askChiron('?')).resolves.toBe('С зеркала.');
+    await expect(llm.downloadChiron()).resolves.toMatchObject({ phase: 'ready' });
     const urls = FS.createDownloadResumable.mock.calls.map((c) => c[0]);
-    expect(urls[0]).toBe('https://huggingface.co/MaksimSun/chiron-gguf/resolve/main/chiron-0.6b-q4_k_m.gguf');
-    expect(urls[1]).toBe('https://github.com/argunov250-del/bio-age/releases/download/android-latest/chiron.gguf');
+    expect(urls[0]).toBe(HF);
+    expect(urls[1]).toBe(MIRROR);
     expect(llama.initLlama.mock.calls[0][0].n_gpu_layers).toBe(0);
+    await expect(llm.askChiron('?')).resolves.toBe('С зеркала.');
   });
 
-  test('оба адреса недоступны — ошибка без initLlama', async () => {
-    const { llm, FS, llama } = fresh();
+  test('отмена останавливает загрузку и не открывает зеркало', async () => {
+    const { llm, FS } = fresh();
     FS.getInfoAsync.mockResolvedValue(absent());
-    FS.createDownloadResumable.mockImplementation(() => { throw new Error('сеть'); });
-    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    let paused = false;
+    FS.createDownloadResumable.mockImplementation((url, dest) => ({
+      downloadAsync: () => new Promise(() => {}),
+      pauseAsync: async () => { paused = true; return { url, resumeData: 'part' }; },
+      savable: () => ({ url, resumeData: 'part' }),
+    }));
+    const job = llm.downloadChiron();
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    await llm.cancelChironDownload();
+    await expect(job).resolves.toMatchObject({ cancelled: true });
+    expect(paused).toBe(true);
+    expect(FS.createDownloadResumable).toHaveBeenCalledTimes(1);
+    expect(FS.writeAsStringAsync).toHaveBeenCalledWith(DEST + '.resume.json', expect.stringContaining('part'));
+    await expect(llm.chironFileState()).resolves.toMatchObject({ phase: 'missing' });
+  });
+
+  test('удаление стирает файл и следующий вопрос идёт без модели', async () => {
+    const { llm, FS, llama } = fresh();
+    let there = true;
+    FS.getInfoAsync.mockImplementation(async (uri) => (uri === DEST && there ? present() : absent()));
+    const release = jest.fn(async () => {});
+    llama.initLlama.mockResolvedValue({ release, completion: async () => ({ text: 'Был.' }) });
+    await expect(llm.askChiron('?')).resolves.toBe('Был.');
+    FS.deleteAsync.mockImplementation(async (uri) => { if (uri === DEST) there = false; });
+    await llm.deleteChironModel();
+    expect(release).toHaveBeenCalled();
+    expect(FS.deleteAsync).toHaveBeenCalledWith(DEST, { idempotent: true });
     let caught;
-    try { await llm.askChiron('?'); } catch (e) { caught = e; }
-    expect(caught.detail).toMatch(/сеть/);
-    expect(llama.initLlama).not.toHaveBeenCalled();
-    log.mockRestore();
+    try { await llm.askChiron('ещё'); } catch (e) { caught = e; }
+    expect(caught.code).toBe('missing');
   });
 });
 
