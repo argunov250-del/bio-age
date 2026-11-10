@@ -41,6 +41,14 @@ describe('cleanAnswer', () => {
     expect(llm.cleanAnswer('  просто текст  ')).toBe('просто текст');
     expect(llm.cleanAnswer('')).toBe('');
   });
+  test('обрезает повтор n-граммы до последнего предложения', () => {
+    const { llm } = fresh();
+    const loop = 'Ложись раньше. сна, коэффициенты, сна, коэффициенты, сна, коэффициенты, сна, коэффициенты';
+    expect(llm.trimRepeatLoop(loop)).toBe('Ложись раньше.');
+    expect(llm.trimRepeatLoop('Короткий ответ без повтора.')).toBe('Короткий ответ без повтора.');
+    const only = llm.trimRepeatLoop('сна, коэффициенты, сна, коэффициенты, сна, коэффициенты');
+    expect(only.split('коэффициенты').length - 1).toBe(1);
+  });
 });
 
 describe('askChiron', () => {
@@ -60,6 +68,13 @@ describe('askChiron', () => {
     }));
     const arg = completion.mock.calls[0][0];
     expect(arg.enable_thinking).toBe(false);
+    expect(arg.n_predict).toBe(160);
+    expect(arg.temperature).toBe(0.6);
+    expect(arg.top_p).toBe(0.9);
+    expect(arg.penalty_repeat).toBeGreaterThanOrEqual(1.15);
+    expect(arg.penalty_repeat).toBeLessThanOrEqual(1.2);
+    expect(arg.penalty_last_n).toBe(128);
+    expect(arg.dry_multiplier).toBeGreaterThan(0);
     expect(arg.messages[0].content).toMatch(/наставник Epimely/);
     expect(arg.messages[1]).toEqual({ role: 'user', content: 'Как спать?' });
     llama.initLlama.mockClear();
