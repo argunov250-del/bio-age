@@ -1,0 +1,16 @@
+{
+  "dialogs": 48,
+  "fromDialogs": 168,
+  "examples": 496,
+  "train": 451,
+  "val": 45,
+  "scenarioAdded": 129,
+  "qaAdded": 199,
+  "sources": [
+    "docs/coach-demo-dialogs.md",
+    "scripts/demoDialogs.js",
+    "lib/coach/scenarios",
+    "lib/coach/qa"
+  ],
+  "note": "Ветка claude/orchestrator-task-delegation-euwxs5 не содержит файлов, которых нет в main."
+}
