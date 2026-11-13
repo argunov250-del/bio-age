@@ -47,6 +47,8 @@ jobs:
           cp src/assets/*.png app/assets/
           mkdir -p app/assets/icons
           cp src/assets/icons/*.png app/assets/icons/
+          mkdir -p app/assets/bg
+          cp src/assets/bg/*.jpg app/assets/bg/
           mkdir -p app/assets/widgets
           cp src/assets/widgets/*.png app/assets/widgets/
           cp -r src/plugins app/plugins

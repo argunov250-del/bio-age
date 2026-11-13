@@ -4,6 +4,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { ErrorBoundary } from './lib/ErrorScreen';
 import { applyTheme, resolveTheme } from './lib/theme';
 import { ColorsContext } from './lib/colors';
+import { PhotoBackdrop, BACKDROP_BASE } from './lib/PhotoBackdrop';
 import { tr, RU, setLang } from './lib/i18n';
 import { loadProfile, saveProfile, loadResult, saveResult, purgeLabs, loadEntries, saveEntries, loadUnlocks, saveUnlocks, addOpen, loadDevMode, saveDevMode } from './lib/storage';
 import { planEntries, lastPlanNight } from './lib/sleepPlan';
@@ -11,6 +12,7 @@ import { applyManual } from './lib/manual';
 import { sdkStatus, init, grantedTypes, askPermissions, askBackground, RECORD_TYPES, EXTRA_TYPES, CYCLE_TYPES } from './lib/health';
 import { loadDataset } from './lib/metrics';
 import { compute } from './lib/compute';
+import { computePerf } from './lib/perf/index';
 import { buildDetail } from './lib/details';
 import { TabBar, FadeIn } from './lib/ui';
 import { ScreenIn } from './lib/motion';
@@ -29,6 +31,9 @@ import { MetricsScreen } from './lib/screens/MetricsScreen';
 import { WorkoutsScreen } from './lib/screens/WorkoutsScreen';
 import { ProfileScreen } from './lib/screens/ProfileScreen';
 import { DetailScreen } from './lib/screens/DetailScreen';
+import { RecoveryScreen } from './lib/screens/RecoveryScreen';
+import { StrainScreen } from './lib/screens/StrainScreen';
+import { SleepScreen } from './lib/screens/SleepScreen';
 import { TipsScreen } from './lib/screens/TipsScreen';
 import { SleepScheduleScreen } from './lib/screens/SleepScheduleScreen';
 import { LogScreen } from './lib/screens/LogScreen';
@@ -40,7 +45,6 @@ import { AchievementsScreen } from './lib/screens/AchievementsScreen';
 import { evaluate, withUnlocks } from './lib/achievements';
 import { RecapScreen } from './lib/screens/RecapScreen';
 import { weekRecap } from './lib/recap';
-import { ambienceAt, DAY } from './lib/ambience';
 import { scheduleReminders, askNotifications } from './lib/reminders';
 import { checkGoals, notifyRankUp } from './lib/notify';
 import { applyIcon } from './lib/appIcon';
@@ -240,20 +244,11 @@ function Main() {
     return () => { alive = false; };
   }, [weatherOn, profile, now]);
   useEffect(() => { setCoachWeather(weather); }, [weather]);
-  const amb = useMemo(() => {
-    const p = profile || {};
-    const a = p.ambience === 'day' ? DAY : ambienceAt(now);
-    const season = a.season || ambienceAt(now).season;
-    // Эффект: по погоде за окном, а без неё — по сезону.
-    let fx = season;
-    if (weather) {
-      fx = { rain: 'rain', storm: 'storm', snow: 'snow', fog: 'fog', clouds: 'clouds' }[weather.kind]
-        || (!weather.day ? 'stars' : season === 'autumn' ? 'leaves' : season === 'spring' ? 'spring' : null);
-    }
-    const gloomy = weather && ['rain', 'storm', 'fog', 'clouds'].includes(weather.kind);
-    return { ...a, dim: a.dim + (gloomy ? 0.08 : 0), season: p.seasonFx === false ? null : fx };
-  }, [profile, now, weather]);
   const recap = useMemo(() => weekRecap(result, achievements.list), [result, achievements]);
+  // Нагрузка / восстановление / сон: считаются один раз после расчёта и отдаются экранам. Сбой — null, не падение.
+  const perf = useMemo(() => {
+    try { return dataset && result ? computePerf(dataset, result, profile, now) : null; } catch (e) { return null; }
+  }, [result, dataset, profile, now]);
   setLite(profile && profile.lite); // облегчённый режим читается при отрисовке
   useEffect(() => { setHaptics(profile && profile.haptics); }, [profile]);
 
@@ -276,10 +271,10 @@ function Main() {
   useEffect(() => {
     if (!result) return undefined;
     const id = setTimeout(() => {
-      try { require('./lib/widgets/sync').syncWidgets({ result, profile, growth, lang: RU ? 'ru' : 'en' }); } catch (e) {}
+      try { require('./lib/widgets/sync').syncWidgets({ result, profile, growth, perf, lang: RU ? 'ru' : 'en' }); } catch (e) {}
     }, 1000);
     return () => clearTimeout(id);
-  }, [result, growth, profile]);
+  }, [result, growth, profile, perf]);
   // Вода/витамины/дыхание/пауза изменились: обновить карточки и пересчитать опыт (работает и без данных Health Connect).
   useEffect(() => {
     let alive = true;
@@ -361,7 +356,7 @@ function Main() {
       setTab('home');
       return true;
     }
-    if (['debug', 'tips', 'log', 'sleep', 'cycle', 'about', 'import', 'achievements', 'recap', 'workouts'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'tips', 'log', 'sleep', 'perf:recovery', 'perf:strain', 'perf:sleep', 'cycle', 'about', 'import', 'achievements', 'recap', 'workouts'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -535,8 +530,9 @@ function Main() {
   // Экран запуска лежит поверх: когда логотип долетел до шапки, под ним уже
   // открывается главный экран, а запуск растворяется — без чёрной паузы.
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <StatusBar barStyle={colors.dark ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
+    <View style={{ flex: 1, backgroundColor: BACKDROP_BASE }}>
+      <PhotoBackdrop />
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       {screen === 'intro' ? null : <ScreenIn key={screenKey + ':' + (RU ? 'ru' : 'en') + ':' + themeName} dir={nav.dir}>{renderScreen()}</ScreenIn>}
       {splash ? <ColorsContext.Provider value={colors}><LaunchScreen ready={ready} firstRun={ready && !profile} onReveal={onIntroDone} onDone={() => setSplash(false)} /></ColorsContext.Provider> : null}
     </View>
@@ -567,6 +563,12 @@ function Main() {
               onSave={onSaveSchedule} onSettings={onSettings} onBack={goBack} />
           </ColorsContext.Provider>
         );
+      case 'perf:recovery':
+        return <ColorsContext.Provider value={colors}><RecoveryScreen perf={perf} onBack={goBack} /></ColorsContext.Provider>;
+      case 'perf:strain':
+        return <ColorsContext.Provider value={colors}><StrainScreen perf={perf} onBack={goBack} /></ColorsContext.Provider>;
+      case 'perf:sleep':
+        return <ColorsContext.Provider value={colors}><SleepScreen perf={perf} onBack={goBack} onOpen={open} /></ColorsContext.Provider>;
       case 'workouts':
         return (
           <ColorsContext.Provider value={colors}>
@@ -610,16 +612,16 @@ function Main() {
       default: {
         const theme = colors;
         return (
-          <View style={{ flex: 1, backgroundColor: colors.bg }}>
+          <View style={{ flex: 1 }}>
             <ColorsContext.Provider value={theme}>
               <FadeIn key={tab} dir={nav.tabDir}>
                 {tab === 'coach' ? (
                   <CoachScreen result={result} profile={profile} tabbed bottom={insets.bottom} onBack={goBack} onTips={() => setScreen('tips')} extra={dayPlan.extra} onReply={dayPlan.onReply} />
                 ) : tab === 'metrics' ? (
-                  <MetricsScreen result={result} profile={profile} loading={loading} onRefresh={refresh}
+                  <MetricsScreen result={result} profile={profile} perf={perf} loading={loading} onRefresh={refresh}
                     missingAccess={missingAccess} onAskAccess={onRequest} onOpen={open} />
                 ) : tab === 'growth' ? (
-                  <GrowthScreen growth={growthView} amb={amb} plan={dayPlan.plan} activities={activities} water={water} noData={noData}
+                  <GrowthScreen growth={growthView} plan={dayPlan.plan} activities={activities} water={water} noData={noData}
                     arc={dayPlan.arc} onArcAct={dayPlan.actArc} achievements={achievements.list} />
                 ) : tab === 'profile' ? (
                   <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
@@ -627,8 +629,8 @@ function Main() {
                     weather={weather} onWeather={onWeather} water={water}
                     devMode={devMode} onDevUnlock={() => setDevMode(true)} />
                 ) : (
-                  <HomeScreen result={result} profile={profile} loading={loading} error={error} onOpen={open} onRefresh={refresh}
-                    achievements={achievements.list} amb={amb} recap={recap} planLast={planLast} planFromHC={planFromHC} weather={weather} growth={growth} arc={dayPlan.arc} onArcAct={dayPlan.actArc} />
+                  <HomeScreen result={result} profile={profile} perf={perf} loading={loading} error={error} onOpen={open} onRefresh={refresh}
+                    achievements={achievements.list} recap={recap} planLast={planLast} planFromHC={planFromHC} weather={weather} growth={growth} arc={dayPlan.arc} onArcAct={dayPlan.actArc} />
                 )}
               </FadeIn>
             </ColorsContext.Provider>

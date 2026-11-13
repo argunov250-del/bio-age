@@ -159,7 +159,11 @@ async function runApp({ lang, stored, theme }) {
     if (/Что-то пошло не так|Something went wrong/.test(t)) throw new Error('ErrorBoundary сработал: ' + t.slice(0, 300));
     return t;
   };
-  const seen = {};
+  const seen = { backdrops: [], bare: {} };
+  const { SurfaceContext: SurfCtx } = require(path.join(ROOT, 'lib/colors'));
+  const barePhoto = () => barePhotoText(r.root, SurfCtx, require(path.join(ROOT, 'lib/theme')).THEMES.light);
+  const backdropCount = () => r.root.findAll((n) => n.props && n.props.testID === 'photo-backdrop' && typeof n.type === 'string').length;
+  seen.backdrops.push(backdropCount());
   const launch = r.root.findAll((n) => n.type === LaunchScreen);
   if (launch.length) { await act(async () => { launch[0].props.onReveal(); }); await flush(); }
   seen.start = texts();
@@ -171,6 +175,8 @@ async function runApp({ lang, stored, theme }) {
       await act(async () => { b.props.onChange(key); });
       await flush(); await flush();
       seen[key] = texts();
+      seen.backdrops.push(backdropCount());
+      if (theme !== 'dark') seen.bare[key] = barePhoto();
     }
   }
   if (stored) {
@@ -210,6 +216,12 @@ describe.each(['light', 'dark'])('theme=%s', (theme) => {
     expect(errors).toEqual([]);
     for (const k of ['home', 'metrics', 'coach', 'growth', 'profile']) expect(seen[k].length).toBeGreaterThan(10);
     expect(seen.profile).toContain('ТЕМА');
+    // Фото-фон: один на всё приложение, не пересоздаётся при смене вкладок.
+    expect(seen.backdrops.every((n) => n === 1)).toBe(true);
+    if (theme === 'light') expect(seen.bare).toEqual({ metrics: [], coach: [], growth: [], profile: [], home: [] });
+    // Убранные настройки анимированного фона отсутствуют.
+    expect(seen.profile).not.toContain('Небо по времени суток');
+    expect(seen.profile).not.toContain('Сезонные эффекты');
     const T = require(path.join(ROOT, 'lib/theme'));
     expect(T.THEMES[theme].bg).toBe(theme === 'dark' ? '#0E0F11' : '#EEF0F3');
     expect(T.COLORS.name).toBe(theme);
@@ -242,46 +254,77 @@ describe.each(cases)('render lang=%s stored=%s', (lang, stored) => {
   });
 });
 
-// Частицы погоды не должны перекрывать карточки: слои идут раньше карточек, без elevation и без касаний.
-describe('weather layers sit behind cards', () => {
-  test('WeatherFall и SeasonLayer: порядок, zIndex, pointerEvents', async () => {
+// Текст прямо на фото-фоне (заголовки, разделы, шапка) светлый в обеих темах.
+describe('on-photo text colors', () => {
+  test.each(['light', 'dark'])('PageTitle, Section, AppHeader в теме %s берут onBg', async (theme) => {
+    jest.resetModules();
+    jest.doMock('react-native', () => makeRN('ru'), { virtual: true });
+    jest.doMock('react-native-svg', () => hostProxy(), { virtual: true });
+    jest.doMock('expo-haptics', () => ({ __esModule: true, impactAsync: async () => {}, notificationAsync: async () => {}, selectionAsync: async () => {}, ImpactFeedbackStyle: {}, NotificationFeedbackType: {} }), { virtual: true });
+    jest.doMock('react-native-safe-area-context', () => ({ __esModule: true, SafeAreaView: host('SafeAreaView'), useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }), { virtual: true });
+    const TR = require('react-test-renderer');
+    const { ColorsContext } = require(path.join(ROOT, 'lib/colors'));
+    const { THEMES } = require(path.join(ROOT, 'lib/theme'));
+    const { PageTitle, Section } = require(path.join(ROOT, 'lib/ui'));
+    const { AppHeader } = require(path.join(ROOT, 'lib/AppHeader'));
+    const c = THEMES[theme];
+    expect(c.onBg).toBe('#F4F5F6');
+    let r;
+    await TR.act(async () => {
+      r = TR.create(React.createElement(ColorsContext.Provider, { value: c },
+        React.createElement(PageTitle, null, 'Профиль'),
+        React.createElement(Section, { right: 'Все' }, 'Сон'),
+        React.createElement(AppHeader, { onLog() {}, chip: null, subtitle: null })));
+    });
+    const colorOf = (txt) => {
+      const n = r.root.findAll((x) => x.props && x.props.style && x.props.children != null && [].concat(x.props.children).join('').toUpperCase() === txt)[0];
+      return RNflat(n.props.style).color;
+    };
+    expect(colorOf('ПРОФИЛЬ')).toBe(c.onBg);
+    expect(colorOf('СОН')).toBe(c.onBg);
+    expect(colorOf('ВСЕ')).toBe(c.onBgSub);
+    expect(colorOf('EPIMELY')).toBe(c.onBg);
+    await TR.act(async () => { r.unmount(); });
+  });
+
+  test('PhotoBackdrop: одна картинка cover, градиент-подложка, без анимированных слоёв', async () => {
     jest.resetModules();
     jest.doMock('react-native', () => makeRN('ru'), { virtual: true });
     jest.doMock('react-native-svg', () => hostProxy(), { virtual: true });
     const TR = require('react-test-renderer');
-    const { WeatherFall, SurfaceProvider } = require(path.join(ROOT, 'lib/WeatherFall'));
-    const { SeasonLayer } = require(path.join(ROOT, 'lib/SeasonLayer'));
-    const { Card } = require(path.join(ROOT, 'lib/ui'));
-    const { Glass } = require(path.join(ROOT, 'lib/glass'));
+    const { PhotoBackdrop } = require(path.join(ROOT, 'lib/PhotoBackdrop'));
     let r;
-    await TR.act(async () => {
-      r = TR.create(React.createElement(SurfaceProvider, { register: null },
-        React.createElement('Scroll', null,
-          React.createElement(WeatherFall, { fx: 'rain', registry: null }),
-          React.createElement(Card, null, 'a'),
-          React.createElement(Glass, null, 'b'))));
-    });
-    const kids = r.root.findByType('Scroll').children.map((c) => c.type);
-    const iw = kids.indexOf(WeatherFall);
-    expect(iw).toBe(0);
-    expect(kids.indexOf(Card)).toBeGreaterThan(iw);
-    expect(kids.indexOf(Glass)).toBeGreaterThan(iw);
-    const layer = r.root.findAll((n) => n.props && n.props.testID === 'weather-layer' && typeof n.type === 'string')[0];
-    expect(layer.props.pointerEvents).toBe('none');
-    const flat = RNflat(layer.props.style);
-    expect(flat.zIndex).toBe(0);
-    expect(flat.elevation).toBe(0);
-    for (const season of ['fog', 'stars', 'storm', 'summer']) {
-      let q;
-      await TR.act(async () => { q = TR.create(React.createElement(SeasonLayer, { season })); });
-      for (const n of q.root.findAll((x) => x.props && x.props.testID === 'season-layer' && typeof x.type === 'string')) {
-        expect(n.props.pointerEvents).toBe('none');
-        expect(RNflat(n.props.style).elevation).toBe(0);
-      }
-      await TR.act(async () => { q.unmount(); }); // снимаем таймеры SeasonLayer до конца теста
-    }
+    await TR.act(async () => { r = TR.create(React.createElement(PhotoBackdrop)); });
+    const imgs = r.root.findAll((n) => n.type === 'Image');
+    expect(imgs).toHaveLength(1);
+    expect(imgs[0].props.resizeMode).toBe('cover');
+    expect(r.root.findAll((n) => n.type === 'LinearGradient').length).toBe(1);
+    expect(r.root.findAll((n) => n.props && (n.props.testID === 'weather-layer' || n.props.testID === 'season-layer'))).toHaveLength(0);
+    await TR.act(async () => { r.unmount(); });
   });
 });
+
+// Текст на фото: ищем Text, чей цвет = c.text/c.sub/c.muted светлой темы и у которого нет предка
+// с фоном (карточка, чип, поле) или поверхности 'card'. Такой текст на тёмном фото нечитаем.
+function barePhotoText(root, SurfaceContext, c) {
+  const bad = new Set([c.text, c.sub, c.muted].map((x) => String(x).toLowerCase()));
+  const out = [];
+  const flat = (s) => (Array.isArray(s) ? Object.assign({}, ...s.flat(3).filter(Boolean)) : s || {});
+  const hasBg = (n) => { const b = flat(n.props && n.props.style).backgroundColor; return !!b && b !== 'transparent'; };
+  for (const n of root.findAll((x) => typeof x.type === 'string' && /Text$/.test(x.type))) {
+    const col = flat(n.props.style).color;
+    if (!col || !bad.has(String(col).toLowerCase())) continue;
+    let covered = false;
+    for (let p = n.parent; p && !covered; p = p.parent) {
+      if (p.type && p.type.$$typeof && p.props && p.props.value === 'card' && p.type._context === SurfaceContext) covered = true;
+      else if (p.type && p.type._context === SurfaceContext && p.props.value === 'card') covered = true;
+      else if (typeof p.type === 'string' && hasBg(p)) covered = true;
+      else if (typeof p.type !== 'string' && p.props && hasBg(p)) covered = true;
+    }
+    if (!covered) out.push(String(col) + ': ' + [].concat(n.props.children).join('').slice(0, 40));
+  }
+  return out;
+}
 function RNflat(s) { return Array.isArray(s) ? Object.assign({}, ...s.filter(Boolean)) : s || {}; }
 
 
@@ -291,6 +334,7 @@ describe('Growth onboarding', () => {
     jest.resetModules();
     jest.doMock('react-native', () => makeRN(lang), { virtual: true });
     jest.doMock('react-native-svg', () => hostProxy(), { virtual: true });
+    jest.doMock('expo-haptics', () => ({ __esModule: true, impactAsync: async () => {}, notificationAsync: async () => {}, selectionAsync: async () => {}, ImpactFeedbackStyle: {}, NotificationFeedbackType: {} }), { virtual: true });
     jest.doMock('react-native-safe-area-context', () => ({ __esModule: true, SafeAreaView: host('SafeAreaView'), useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }), { virtual: true });
     const mem = {};
     jest.doMock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: async (k) => (k in mem ? mem[k] : null), setItem: async (k, v) => { mem[k] = String(v); } } }), { virtual: true });
@@ -333,6 +377,7 @@ describe('GrowthScreen', () => {
     jest.resetModules();
     jest.doMock('react-native', () => makeRN(lang), { virtual: true });
     jest.doMock('react-native-svg', () => hostProxy(), { virtual: true });
+    jest.doMock('expo-haptics', () => ({ __esModule: true, impactAsync: async () => {}, notificationAsync: async () => {}, selectionAsync: async () => {}, ImpactFeedbackStyle: {}, NotificationFeedbackType: {} }), { virtual: true });
     jest.doMock('react-native-safe-area-context', () => ({ __esModule: true, SafeAreaView: host('SafeAreaView'), useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }), { virtual: true });
     const mem = { 'growth.intro.v1': '1' };
     jest.doMock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: async (k) => (k in mem ? mem[k] : null), setItem: async (k, v) => { mem[k] = String(v); } } }), { virtual: true });
@@ -371,5 +416,50 @@ describe('GrowthScreen', () => {
       expect(q.root.findAll((n) => n.type === 'Circle').length).toBeLessThanOrEqual(600);
       await TR.act(async () => { q.unmount(); });
     }
+  });
+});
+
+describe('no bare dark text on the photo (light theme)', () => {
+  test('образцы экранов', async () => {
+    jest.resetModules();
+    jest.doMock('react-native', () => makeRN('ru'), { virtual: true });
+    jest.doMock('react-native-svg', () => hostProxy(), { virtual: true });
+    jest.doMock('expo-haptics', () => ({ __esModule: true, impactAsync: async () => {}, notificationAsync: async () => {}, selectionAsync: async () => {}, ImpactFeedbackStyle: {}, NotificationFeedbackType: {} }), { virtual: true });
+    jest.doMock('react-native-safe-area-context', () => ({ __esModule: true, SafeAreaView: host('SafeAreaView'), useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }), { virtual: true });
+    const TR = require('react-test-renderer');
+    const { ColorsContext, SurfaceContext } = require(path.join(ROOT, 'lib/colors'));
+    const { THEMES } = require(path.join(ROOT, 'lib/theme'));
+    const c = THEMES.light;
+    const ui = require(path.join(ROOT, 'lib/ui'));
+    const { Screen, Card, Section, Body, Note, T, Bullet, Subhead, Label, Disclaimer, Msg } = ui;
+    const noop = new Proxy(function () {}, { get: (_, k) => (k === '__esModule' ? true : k === 'then' ? undefined : noop), apply: () => noop });
+    for (const m of ['react-native-health-connect', 'expo-notifications', 'expo-task-manager', 'expo-background-task', 'expo-location', 'expo-document-picker', 'expo-file-system', 'expo-file-system/legacy', 'expo-sharing', 'react-native-view-shot', 'fflate', '@react-native-async-storage/async-storage']) jest.doMock(m, () => noop, { virtual: true });
+    const checked = []; const skipped = [];
+    const samples = {
+      bare: () => React.createElement(Screen, { title: 'Заголовок', onBack() {} },
+        React.createElement(Section, null, 'Раздел'), React.createElement(Body, null, 'a'), React.createElement(Body, { sub: true }, 'b'),
+        React.createElement(Note, null, 'n'), React.createElement(T, null, 't'), React.createElement(T, { sub: true }, 's'),
+        React.createElement(Bullet, null, 'bl'), React.createElement(Subhead, null, 'sh'), React.createElement(Label, null, 'lb'),
+        React.createElement(Disclaimer), React.createElement(Msg, null, 'ok')),
+      control: () => React.createElement(Screen, { title: 'x' }, React.createElement('Text', { style: { color: c.text } }, 'raw')),
+      inCard: () => React.createElement(Screen, { title: 'x' }, React.createElement(Card, null, React.createElement(Body, null, 'a'), React.createElement(Note, null, 'n'))),
+    };
+    for (const k of ['AboutDataScreen', 'TipsScreen', 'NoHealthConnectScreen', 'PermissionsScreen', 'AchievementsScreen']) {
+      let M; try { M = require(path.join(ROOT, 'lib/screens/' + k)); } catch (e) { skipped.push(k + ': ' + e.message.slice(0, 100)); continue; }
+      const props = { onBack() {}, onRetry() {}, onSkip() {}, onRequest() {}, list: [], rec: { main: { id: 'm', title: 't', why: ['w'], actions: ['a'], lead: 'l' }, others: [] }, status: 3, busy: false, granted: 0 };
+      samples[k] = () => React.createElement(M[k], props);
+    }
+    for (const [name, make] of Object.entries(samples)) {
+      let r;
+      try {
+        await TR.act(async () => { r = TR.create(React.createElement(ColorsContext.Provider, { value: c }, make())); });
+      } catch (e) { if (name === 'bare' || name === 'inCard') throw e; skipped.push(name + ': ' + e.message.slice(0, 80)); continue; }
+      checked.push(name);
+      // control — заведомо плохой текст: детектор обязан его найти.
+      expect([name, barePhotoText(r.root, SurfaceContext, c).length > 0]).toEqual([name, name === 'control']);
+      await TR.act(async () => { r.unmount(); });
+    }
+    expect(skipped).toEqual([]);
+    expect(checked.length).toBeGreaterThanOrEqual(7);
   });
 });

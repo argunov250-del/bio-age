@@ -68,7 +68,7 @@ describe('snapshot', () => {
   test('builds a compact snapshot from a computed result', () => {
     const s = snapOf();
     expect(s).toEqual({
-      v: 1, day, spSteps: [3000, 6420], spBio: [], rdHist: { [day]: 78 }, bio: 34.5, chrono: 35, delta: -0.5, readiness: 78, steps: 6420, stepGoal: 8000, sleepH: 7.2, restHr: 58, hrv: 45,
+      v: 1, day, spSteps: [3000, 6420], spBio: [], rdHist: { [day]: 78 }, bio: 34.5, chrono: 35, delta: -0.5, readiness: 78, steps: 6420, recovery: null, strain: null, sleepPerf: null, stepGoal: 8000, sleepH: 7.2, restHr: 58, hrv: 45,
       level: 12, rank: 'Следопыт', updatedAt: NOW, lang: 'ru',
     });
     expect(Object.keys(s).length).toBeLessThan(25);
