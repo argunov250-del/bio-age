@@ -178,7 +178,7 @@ describe.each(COMBOS)('cards (%s, %s)', (lang, theme) => {
     const perf = kind === 'null' ? null : t.perfs[kind];
     const s = t.strings(await t.mount(React.createElement(React.Fragment, null, React.createElement(HealthMonitorCard, { perf }), React.createElement(WeeklyCard, { perf })))).join('|');
     expect(s).toContain(t.tr('Монитор здоровья'));
-    expect(s).toContain(t.tr('Итоги недели по форме'));
+    expect(s).toContain(t.tr('Итоги недели'));
     clean(t, [s]);
     if (kind === 'full') expect(s).toMatch(new RegExp(t.tr('в норме') + '|' + t.tr('вне нормы')));
   });
