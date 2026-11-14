@@ -291,7 +291,7 @@ function Main() {
     return () => { alive = false; clearTimeout(timer); unsub(); };
   }, [takeGrowth]);
   const dayPlan = useDayPlan({
-    result, profile, weather, growth, entries, opens, now,
+    result, profile, weather, growth, entries, opens, now, perf,
     onReward: (r) => { Promise.resolve(awardEvent(r.eventId, r.xp, r.journal)).then(takeGrowth).catch(() => {}); },
   });
   const growthView = useMemo(() => {
@@ -616,7 +616,7 @@ function Main() {
             <ColorsContext.Provider value={theme}>
               <FadeIn key={tab} dir={nav.tabDir}>
                 {tab === 'coach' ? (
-                  <CoachScreen result={result} profile={profile} tabbed bottom={insets.bottom} onBack={goBack} onTips={() => setScreen('tips')} extra={dayPlan.extra} onReply={dayPlan.onReply} />
+                  <CoachScreen result={result} profile={profile} perf={perf} tabbed bottom={insets.bottom} onBack={goBack} onTips={() => setScreen('tips')} extra={dayPlan.extra} onReply={dayPlan.onReply} />
                 ) : tab === 'metrics' ? (
                   <MetricsScreen result={result} profile={profile} perf={perf} loading={loading} onRefresh={refresh}
                     missingAccess={missingAccess} onAskAccess={onRequest} onOpen={open} />

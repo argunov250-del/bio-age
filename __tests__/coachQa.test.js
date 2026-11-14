@@ -11,6 +11,7 @@ jest.mock('../lib/appleHealth', () => ({ importedRecords: () => [], importedType
 ['sleep', 'activity', 'heart', 'training', 'recovery', 'bodyage', 'nutrition', 'stress', 'cycle', 'app', 'chiron'].forEach((n) => {
   jest.doMock('../lib/coach/qa/' + n, () => ({ __esModule: true, default: require('./fixtures/qaFixture')[n] }));
 });
+jest.doMock('../lib/coach/qa/perf', () => ({ __esModule: true, default: [] })); // настоящие вопросы про восстановление/нагрузку проверяет coachPerfQa.test.js
 
 const okM = (value) => ({ status: 'ok', value });
 const win = (v) => ({ 7: okM(v), 14: okM(v), 30: okM(v) });
@@ -107,40 +108,17 @@ describe('движок ответов', () => {
   });
 });
 
-async function setup(lang, theme, model) {
+async function setup(lang, theme) {
   jest.resetModules();
   const host = (name) => function Host(props) { return React.createElement(name, props, props.children); };
   const gp = require('./growthUiHarness');
-  const rn = gp.makeRN(lang, host);
-  const keys = [];
-  rn.Keyboard = {
-    dismiss() {},
-    addListener: (ev, fn) => {
-      keys.push({ ev, fn });
-      return { remove() { const i = keys.findIndex((x) => x.fn === fn); if (i >= 0) keys.splice(i, 1); } };
-    },
-  };
-  jest.doMock('react-native', () => rn, { virtual: true });
+  jest.doMock('react-native', () => gp.makeRN(lang, host), { virtual: true });
   jest.doMock('react-native-svg', () => gp.hostProxy(host), { virtual: true });
   jest.doMock('react-native-safe-area-context', () => ({ __esModule: true, SafeAreaView: host('SafeAreaView'), useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }), { virtual: true });
   const mem = {};
   jest.doMock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: async (k) => (k in mem ? mem[k] : null), setItem: async (k, v) => { mem[k] = String(v); }, removeItem: async (k) => { delete mem[k]; } } }), { virtual: true });
   jest.doMock('expo-haptics', () => ({ __esModule: true, impactAsync: async () => {}, notificationAsync: async () => {}, selectionAsync: async () => {}, ImpactFeedbackStyle: {}, NotificationFeedbackType: {} }), { virtual: true });
   jest.doMock('react-native-health-connect', () => ({ __esModule: true }), { virtual: true });
-  // Модель в тестах не грузится: копия «уже в документах», completion отдаёт ответ со скрытым <think>.
-  const FS = require('expo-file-system/legacy');
-  FS.documentDirectory = 'file:///mock-docs/';
-  const modelOk = model !== 'fail';
-  FS.getInfoAsync.mockReset();
-  FS.getInfoAsync.mockImplementation(async (uri) => ({ exists: modelOk && uri === 'file:///mock-docs/chiron-0.6b-q4_k_m.gguf', isDirectory: false, size: modelOk ? 400000000 : 0 }));
-  FS.createDownloadResumable.mockReset();
-  FS.createDownloadResumable.mockImplementation(() => { if (!modelOk) throw new Error('сеть'); return { downloadAsync: async () => { throw new Error('сеть'); }, resumeAsync: async () => { throw new Error('сеть'); }, savable: () => ({}) }; });
-  const llama = require('llama.rn');
-  llama.initLlama.mockReset();
-  llama.initLlama.mockImplementation(async () => {
-    if (!modelOk) throw new Error('сеть');
-    return { completion: async () => ({ text: '<think>скрыто</think>Ложись и вставай в одно время. За час до сна убери экраны.' }) };
-  });
   const errors = [];
   jest.spyOn(console, 'error').mockImplementation((...a) => { const m = a.map(String).join(' '); if (!/react-test-renderer is deprecated/.test(m)) errors.push(m); });
   const TR = require('react-test-renderer');
@@ -164,18 +142,15 @@ async function setup(lang, theme, model) {
     await TR.act(async () => { b.props.onPress(); });
   };
   const wait = async (ms) => { await TR.act(async () => { await new Promise((res) => setTimeout(res, ms)); }); };
-  return { TR, r, text, pressText, findText, wait, errors, keys, tr: i18n.tr, q: (id) => (lang === 'ru' ? QA_BY_ID[id].q.ru : QA_BY_ID[id].q.en), QA_BY_ID, lang };
+  return { TR, r, text, pressText, findText, wait, errors, tr: i18n.tr, q: (id) => (lang === 'ru' ? QA_BY_ID[id].q.ru : QA_BY_ID[id].q.en), QA_BY_ID, lang };
 }
 
 describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']])('экран Хирона (%s, %s)', (lang, theme) => {
   afterEach(() => { jest.restoreAllMocks(); });
-  test('поле ввода и подсказки на месте, кнопки «Все темы» и «Мне плохо» нет', async () => {
+  test('нет TextInput в чате; подсказки и «Все темы» на месте, кнопки «Мне плохо» нет', async () => {
     const t = await setup(lang, theme);
-    const input = t.r.root.findAll((n) => n.type === 'TextInput');
-    expect(input).toHaveLength(1);
-    expect(input[0].props.placeholder).toBe(t.tr('Напишите Хирону…'));
-    expect(t.findText(t.tr('Отправить'))).toBeTruthy();
-    expect(t.text()).not.toContain(t.tr('Все темы'));
+    expect(t.r.root.findAll((n) => n.type === 'TextInput')).toHaveLength(0);
+    expect(t.findText(t.tr('Все темы'))).toBeTruthy();
     expect(t.text()).not.toMatch(/Мне плохо|I feel unwell/);
     expect(t.text()).toContain(t.tr('Хирон даёт общие советы и не заменяет врача.'));
     expect(t.findText(t.q('sleep_how_much'))).toBeTruthy();
@@ -187,10 +162,7 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
     await t.wait(1200);
     const x = t.text();
     expect(x).toContain(t.q('sleep_how_much'));
-    // Кинетический текст режет фразу по словам: это ответ маленькой модели, не каталога.
-    expect(x).toContain('Ложись');
-    expect(x).toContain('экраны');
-    expect(x).not.toContain('скрыто');
+    expect(x).toMatch(lang === 'ru' ? /Короткий|Второй/ : /Short|Second/);
     expect(x).not.toMatch(/Подробный разбор|Detailed breakdown/);
     await t.pressText(t.tr('Подробнее'));
     const y = t.text();
@@ -199,51 +171,28 @@ describe.each([['ru', 'light'], ['ru', 'dark'], ['en', 'light'], ['en', 'dark']]
     expect(y).toContain('AASM');
     expect(t.errors).toEqual([]);
   });
-  test('своё сообщение уходит Хирону, ответ остаётся в ленте', async () => {
+  test('«Все темы»: разделы -> вопросы; поиск только фильтрует список; выбор вопроса отвечает', async () => {
     const t = await setup(lang, theme);
-    const input = t.r.root.findAll((n) => n.type === 'TextInput')[0];
-    await t.TR.act(async () => { input.props.onChangeText(lang === 'ru' ? 'Как лучше спать?' : 'How should I sleep?'); });
-    await t.pressText(t.tr('Отправить'));
-    await t.wait(1200);
-    const x = t.text();
-    expect(x).toContain(lang === 'ru' ? 'Как лучше спать?' : 'How should I sleep?');
-    expect(x).toContain('Ложись');
-    expect(x).toContain('экраны');
+    const inChips = (id) => t.r.root.findAll((n) => n.type === 'Text' && n.props.children === t.q(id)).length;
+    const chipCount = inChips('app_score');
+    await t.pressText(t.tr('Все темы'));
     expect(t.r.root.findAll((n) => n.type === 'TextInput')).toHaveLength(1);
-    expect(t.errors).toEqual([]);
+    expect(t.text()).toContain(lang === 'ru' ? 'Шаги и активность' : 'Steps and activity');
+    expect(t.text()).not.toContain('cycle');
+    // у каждого раздела есть число вопросов
+    const secCount = t.r.root.findAll((n) => n.type === 'Text' && /^\d+$/.test(String(n.props.children)));
+    expect(secCount.length).toBeGreaterThanOrEqual(5);
+    const input = t.r.root.findAll((n) => n.type === 'TextInput')[0];
+    await t.TR.act(async () => { input.props.onChangeText(lang === 'ru' ? 'фазы' : 'stages'); });
+    expect(t.findText(t.q('sleep_phases'))).toBeTruthy();
+    expect(t.findText('PRO')).toBeTruthy();
+    expect(inChips('app_score')).toBe(chipCount); // в списке окна его нет (остался только чип под чатом, если он там был)
+    await t.TR.act(async () => { input.props.onChangeText('qqqq'); });
+    expect(t.text()).toContain(t.tr('Ничего не найдено'));
+    await t.TR.act(async () => { input.props.onChangeText(lang === 'ru' ? 'недосып' : 'sleep debt'); });
+    await t.pressText(t.q('sleep_debt'));
+    await t.wait(1200);
+    expect(t.r.root.findAll((n) => n.type === 'TextInput')).toHaveLength(0); // окно закрыто
+    expect(t.text()).toContain(t.q('sleep_debt'));
   });
-  test('клавиатура поднимает поле и не складывает его с панелью вкладок', async () => {
-    const t = await setup(lang, theme);
-    const { composerInset } = require(path.join(ROOT, 'lib/screens/CoachScreen'));
-    const { DOCK, SIZES } = require(path.join(ROOT, 'lib/theme'));
-    const closed = DOCK.height + DOCK.lift + SIZES.gap;
-    expect(composerInset(0, true, 0)).toBe(closed);
-    expect(composerInset(320, true, 40)).toBe(320 + SIZES.gap);
-    expect(composerInset(320, true, 40)).toBeLessThan(closed + 320);
-    const box = () => t.r.root.findByProps({ testID: 'coach-composer' });
-    const padOf = () => [].concat(box().props.style).reduce((a, x) => Object.assign(a, x || {}), {}).paddingBottom;
-    expect(padOf()).toBe(composerInset(0, true, 0));
-    await t.TR.act(async () => {
-      t.keys.filter((k) => k.ev === 'keyboardDidShow').forEach((k) => k.fn({ endCoordinates: { height: 320 } }));
-    });
-    expect(padOf()).toBe(320 + SIZES.gap);
-    await t.TR.act(async () => {
-      t.keys.filter((k) => k.ev === 'keyboardDidHide').forEach((k) => k.fn());
-    });
-    expect(padOf()).toBe(composerInset(0, true, 0));
-    expect(t.errors).toEqual([]);
-  });
-});
-
-test('модель не скачана: каталог и подсказка, без скачивания', async () => {
-  const t = await setup('ru', 'light', 'fail');
-  const FS = require('expo-file-system/legacy');
-  FS.createDownloadResumable.mockClear();
-  await t.pressText(t.q('sleep_how_much'));
-  await t.wait(1200);
-  const x = t.text();
-  expect(x).toMatch(/Короткий|Второй/);
-  expect(x).toContain('Скачайте модель в настройках, чтобы Хирон отвечал свободно');
-  expect(FS.createDownloadResumable).not.toHaveBeenCalled();
-  expect(t.errors).toEqual([]);
 });
