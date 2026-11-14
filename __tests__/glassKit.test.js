@@ -24,6 +24,9 @@ function setup({ blur, os = 'android', lite = false }) {
   return { kit, TR: require('react-test-renderer'), C: require(path.join(ROOT, 'lib/colors')), T: require(path.join(ROOT, 'lib/theme')), RN };
 }
 const blurs = (r) => r.root.findAll((n) => n.type === 'BlurView').length;
+// Структура App.js: провайдер вокруг всего, фон в BlurTargetHost раньше экранов (соседи, не родитель).
+const appTree = (kit, ...screens) => React.createElement(kit.BlurTargetProvider, null,
+  React.createElement('View', null, React.createElement(kit.BlurTargetHost, null, React.createElement('View', { testID: 'bg' })), ...screens));
 const mount = async (TR, el) => { let r; await TR.act(async () => { r = TR.create(el); }); return r; };
 
 describe('glassKit', () => {
@@ -33,7 +36,7 @@ describe('glassKit', () => {
     const c = T.THEMES[theme];
     const { GlassCard, GlassPill, GlassIconButton, GlassTile, GlassView, EdgeBlur, GlassScreen, BlurTargetHost } = kit;
     const r = await mount(TR, React.createElement(C.ColorsContext.Provider, { value: c },
-      React.createElement(BlurTargetHost, null,
+      React.createElement(kit.BlurTargetProvider, null, React.createElement(BlurTargetHost, null),
         React.createElement(GlassScreen, { tab: true, title: 'T' },
           React.createElement(GlassCard, { onPress() {} }, React.createElement('Text', null, 'card')),
           React.createElement(GlassPill, { label: 'pill' }),
@@ -50,9 +53,11 @@ describe('glassKit', () => {
     const { kit, TR, C, T } = setup({ blur: true });
     expect(kit.hasBlur()).toBe(true);
     const r = await mount(TR, React.createElement(C.ColorsContext.Provider, { value: T.THEMES.dark },
-      React.createElement(kit.BlurTargetHost, null, React.createElement(kit.GlassCard, null, React.createElement('Text', null, 'x')))));
+      appTree(kit, React.createElement(kit.GlassCard, null, React.createElement('Text', null, 'x')))));
     const bv = r.root.findAll((n) => n.type === 'BlurView');
     expect(bv.length).toBeGreaterThan(0);
+    // BlurView — не потомок собственной цели
+    expect(bv.every((n) => { let p = n.parent; while (p) { if (p.type === 'BlurTargetView') return false; p = p.parent; } return true; })).toBe(true);
     expect(bv[0].props.blurMethod).toBe('dimezisBlurViewSdk31Plus');
     expect(bv[0].props.blurTarget).toBeTruthy();
     expect(bv[0].props.tint).toBe('dark');
@@ -64,7 +69,7 @@ describe('glassKit', () => {
     let r = await mount(s.TR, React.createElement(s.C.ColorsContext.Provider, { value: s.T.THEMES.light }, React.createElement(s.kit.GlassCard, null, React.createElement('Text', null, 'x'))));
     expect(blurs(r)).toBe(0); // нет BlurTargetHost
     s = setup({ blur: true, lite: true });
-    r = await mount(s.TR, React.createElement(s.C.ColorsContext.Provider, { value: s.T.THEMES.light }, React.createElement(s.kit.BlurTargetHost, null, React.createElement(s.kit.GlassCard, null, React.createElement('Text', null, 'x')))));
+    r = await mount(s.TR, React.createElement(s.C.ColorsContext.Provider, { value: s.T.THEMES.light }, appTree(s.kit, React.createElement(s.kit.GlassCard, null, React.createElement('Text', null, 'x')))));
     expect(blurs(r)).toBe(0);
     s = setup({ blur: true, os: 'ios' });
     r = await mount(s.TR, React.createElement(s.C.ColorsContext.Provider, { value: s.T.THEMES.light }, React.createElement(s.kit.GlassCard, null, React.createElement('Text', null, 'x'))));
@@ -74,7 +79,7 @@ describe('glassKit', () => {
   test('EdgeBlur: верх и низ, касания не перехватывает; glassSheetStyle берёт токены темы', async () => {
     const { kit, TR, C, T } = setup({ blur: true });
     const r = await mount(TR, React.createElement(C.ColorsContext.Provider, { value: T.THEMES.dark },
-      React.createElement(kit.BlurTargetHost, null, React.createElement(kit.EdgeBlur, { edge: 'top' }), React.createElement(kit.EdgeBlur, { edge: 'bottom' }))));
+      appTree(kit, React.createElement(kit.EdgeBlur, { edge: 'top' }), React.createElement(kit.EdgeBlur, { edge: 'bottom' }))));
     const edges = r.root.findAll((n) => typeof n.props.testID === 'string' && n.props.testID.startsWith('edge-blur-') && n.props.pointerEvents === 'none');
     expect(edges.length).toBeGreaterThanOrEqual(2);
     expect(blurs(r)).toBeGreaterThan(0);
@@ -96,11 +101,33 @@ describe('glassKit', () => {
     ];
     const picked = [];
     const r = await mount(TR, React.createElement(C.ColorsContext.Provider, { value: T.THEMES.dark },
-      React.createElement(BlurTargetHost, null, React.createElement(GlassTabBar, { tabs, active: 'today', onChange: (k) => picked.push(k), bottom: 16 }))));
+      appTree(require(path.join(ROOT, 'lib/glassKit')), React.createElement(GlassTabBar, { tabs, active: 'today', onChange: (k) => picked.push(k), bottom: 16 }))));
     const labels = r.root.findAll((n) => n.type === 'Text' && tabs.some((t) => t.title === n.props.children)).map((n) => n.props.children);
     expect(labels).toEqual(tabs.map((t) => t.title));
     const btn = r.root.findAll((n) => n.props.testID === 'tab-journal' && typeof n.props.onPress === 'function')[0];
     await TR.act(async () => { btn.props.onPress(); });
     expect(picked).toEqual(['journal']);
+  });
+
+  test('Android: экраны — соседи фона, BlurView монтируется только когда ref цели заполнен', async () => {
+    const { kit, TR, C, T } = setup({ blur: true });
+    const seen = [];
+    const Probe = () => { const ok = kit.useBlurReady(); seen.push(ok); return null; };
+    const r = await mount(TR, React.createElement(C.ColorsContext.Provider, { value: T.THEMES.dark },
+      React.createElement(kit.BlurTargetProvider, null,
+        React.createElement(Probe),
+        React.createElement(kit.BlurTargetHost, null, React.createElement('View', null)))));
+    expect(seen[0]).toBe(false); // до монтирования цели размытия нет
+    expect(seen[seen.length - 1]).toBe(true);
+    await TR.act(async () => { r.unmount(); });
+  });
+
+  test('крупные карточки размываются, пилюли/плитки/кнопки — нет', async () => {
+    const { kit, TR, C, T } = setup({ blur: true });
+    const el = (...k) => React.createElement(C.ColorsContext.Provider, { value: T.THEMES.dark }, appTree(kit, ...k));
+    let r = await mount(TR, el(React.createElement(kit.GlassPill, { label: 'p' }), React.createElement(kit.GlassTile, { label: 'a', value: 1 }), React.createElement(kit.GlassIconButton, null)));
+    expect(blurs(r)).toBe(0);
+    r = await mount(TR, el(React.createElement(kit.GlassCard, null)));
+    expect(blurs(r)).toBe(1);
   });
 });

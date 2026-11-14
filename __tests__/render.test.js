@@ -39,6 +39,7 @@ function makeAnimated() {
   return A;
 }
 
+const RN_URL = {}; // обработчики Linking 'url' (для проверки ссылок из виджета)
 function makeRN(lang) {
   const comps = {};
   for (const n of ['View', 'Text', 'ScrollView', 'Pressable', 'TextInput', 'Image', 'Modal', 'ActivityIndicator', 'KeyboardAvoidingView', 'StatusBar', 'RefreshControl', 'Switch', 'TouchableOpacity', 'SafeAreaView', 'FlatList']) comps[n] = host(n);
@@ -53,7 +54,7 @@ function makeRN(lang) {
     useWindowDimensions: () => ({ width: 400, height: 800, scale: 2, fontScale: 1 }),
     PixelRatio: { get: () => 2, getFontScale: () => 1, roundToNearestPixel: (x) => x },
     Easing: new Proxy({}, { get: () => (...a) => (typeof a[0] === 'function' ? a[0] : (x) => x) }),
-    Linking: { openURL: () => Promise.resolve(), addEventListener: sub, getInitialURL: () => Promise.resolve(null) },
+    Linking: { openURL: () => Promise.resolve(), addEventListener: (t, h) => { if (t === 'url') (RN_URL.handlers || (RN_URL.handlers = [])).push(h); return { remove() {} }; }, getInitialURL: () => Promise.resolve(null) },
     Alert: { alert() {} },
     BackHandler: { addEventListener: sub },
     AppState: { currentState: 'active', addEventListener: sub },
@@ -212,6 +213,26 @@ async function runApp({ lang, stored, theme }) {
     }
   }
   if (stored) {
+    // Стек экранов: Метрики -> Все показатели (perf:recovery) -> Назад возвращает в Метрики, затем на вкладку; ссылка из виджета открывается сразу.
+    const { MetricsScreen } = require(path.join(ROOT, 'lib/screens/MetricsScreen'));
+    const { RecoveryScreen } = require(path.join(ROOT, 'lib/screens/RecoveryScreen'));
+    const { TrendsScreen } = require(path.join(ROOT, 'lib/screens/TrendsScreen'));
+    const Home2 = require(path.join(ROOT, 'lib/screens/HomeScreen')).HomeScreen;
+    const has = (C) => r.root.findAll((n) => n.type === C).length > 0;
+    await act(async () => { r.root.findAll((n) => n.type === Home2)[0].props.onOpen('metrics'); }); await flush(); await flush();
+    expect(has(MetricsScreen)).toBe(true);
+    await act(async () => { r.root.findAll((n) => n.type === MetricsScreen)[0].props.onOpen('perf:recovery'); }); await flush(); await flush();
+    expect(has(RecoveryScreen)).toBe(true);
+    await pressText(lang === 'ru' ? /Назад|‹/ : /Back|‹/);
+    seen.stackBack1 = has(MetricsScreen);
+    await pressText(lang === 'ru' ? /Назад|‹/ : /Back|‹/);
+    seen.stackBack2 = has(Home2);
+    // Виджет при открытом экране поверх вкладок: сброс стека и переход на вкладку.
+    await act(async () => { r.root.findAll((n) => n.type === Home2)[0].props.onOpen('metrics'); }); await flush(); await flush();
+    await act(async () => { (RN_URL.handlers || []).forEach((h) => h({ url: 'epimely://tab/trends' })); }); await flush(); await flush();
+    seen.widgetTrends = has(TrendsScreen) && !has(MetricsScreen);
+  }
+  if (stored) {
     // Переключение языка и включение уведомлений: ремаунт по ключу, пересчёт, перепланирование.
     const { ProfileScreen } = require(path.join(ROOT, 'lib/screens/ProfileScreen'));
     await openProfile();
@@ -248,6 +269,9 @@ describe.each(['light', 'dark'])('theme=%s', (theme) => {
     expect(errors).toEqual([]);
     for (const k of ['today', 'sleep', 'strain', 'trends', 'journal', 'coach', 'growth', 'metrics', 'profile']) expect(seen[k].length).toBeGreaterThan(10);
     expect(seen.profile).toContain('ТЕМА');
+    expect(seen.stackBack1).toBe(true);
+    expect(seen.stackBack2).toBe(true);
+    expect(seen.widgetTrends).toBe(true);
     // Фото-фон: один на всё приложение, не пересоздаётся при смене вкладок.
     expect(seen.backdrops.every((n) => n === 1)).toBe(true);
     if (theme === 'light') expect(seen.bare).toEqual({ sleep: [], strain: [], trends: [], journal: [], today: [], profile: [], coach: [], growth: [], metrics: [] });
@@ -336,6 +360,27 @@ describe('on-photo text colors', () => {
     expect(r.root.findAll((n) => n.type === 'LinearGradient').length).toBe(1);
     expect(r.root.findAll((n) => n.props && (n.props.testID === 'weather-layer' || n.props.testID === 'season-layer'))).toHaveLength(0);
     await TR.act(async () => { r.unmount(); });
+  });
+
+  test('PhotoBackdrop: если onLoad не пришёл, через таймаут фон всё равно показывается', async () => {
+    jest.resetModules();
+    jest.useFakeTimers();
+    jest.doMock('react-native', () => makeRN('ru'), { virtual: true });
+    jest.doMock('react-native-svg', () => hostProxy(), { virtual: true });
+    jest.doMock('expo-haptics', () => ({ __esModule: true, impactAsync: async () => {}, notificationAsync: async () => {}, selectionAsync: async () => {}, ImpactFeedbackStyle: {}, NotificationFeedbackType: {} }), { virtual: true });
+    const TR = require('react-test-renderer');
+    const { PhotoBackdrop, FADE_FALLBACK_MS } = require(path.join(ROOT, 'lib/PhotoBackdrop'));
+    let r;
+    await TR.act(async () => { r = TR.create(React.createElement(PhotoBackdrop)); });
+    const op = () => RNflat(r.root.findAll((n) => typeof n.type === 'string' && n.props.style && RNflat(n.props.style).opacity !== undefined)[0].props.style).opacity;
+    const num = (x) => (x && x.v !== undefined ? x.v : x);
+    const v0 = num(op());
+    await TR.act(async () => { jest.advanceTimersByTime(FADE_FALLBACK_MS + 50); });
+    const v1 = num(op());
+    expect(v0).toBe(0);
+    expect(v1).toBe(1);
+    await TR.act(async () => { r.unmount(); });
+    jest.useRealTimers();
   });
 });
 

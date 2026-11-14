@@ -80,3 +80,16 @@ describe('journalImpact', () => {
     expect(journalImpact(null, null)).toEqual({ insights: [], needMore: expect.any(Array) });
   });
 });
+
+describe('serialized writes', () => {
+  test('parallel mutations do not lose updates', async () => {
+    const now = new Date(2026, 5, 1, 12).getTime();
+    await Promise.all([
+      toggleBehavior('sauna', now), toggleBehavior('coldShower', now), addJournalNote('a', now), addJournalNote('b', now),
+      saveJournalDay({ meditation: 10 }, now), toggleBehavior('alcohol', now),
+    ]);
+    const d = Object.values(await loadJournal())[0];
+    expect(d).toMatchObject({ sauna: true, coldShower: true, meditation: 10, alcohol: 1 });
+    expect(d.notes).toEqual(['a', 'b']);
+  });
+});

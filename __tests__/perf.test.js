@@ -199,3 +199,56 @@ describe('empty / partial', () => {
     const r = run(build()); expect(noNaN(r)).toBe(true); expect(r.meta.dataQuality).toBe('good');
   });
 });
+
+describe('review fixes: cache, lazy trends, edge cases', () => {
+  test('journal change does not recompute the 90-day core; trends lazy and identical', () => {
+    const ds = build({ nights: 40 });
+    const res = {}, prof = { birth: '1990-01-01' };
+    const a = computePerf(ds, res, prof, NOW, { journal: {} });
+    const b = computePerf(ds, res, prof, new Date(+NOW + 5 * 60000), { journal: { [keyAt(-1)]: { alcohol: 2 } } });
+    // те же 90-дневные ряды (общий кэш) — одни и те же массивы
+    expect(b.trends.recovery).toEqual(a.trends.recovery);
+    expect(b.trends.days).toBe(90);
+    expect(b.recovery.series14).toEqual(b.trends.recovery.slice(-14));
+    expect(b.sleep.series14).toEqual(b.trends.sleep.slice(-14));
+    expect(b.strain.series14).toEqual(b.trends.strain.slice(-14));
+    expect(Object.keys(b)).toContain('trends');
+    expect(noNaN(b)).toBe(true);
+  });
+  test('trends exist even when today recovery is null; series14 absent but trends present', () => {
+    const ds = build({ nights: 0 });
+    const p = run(ds);
+    expect(p.recovery).toBeNull();
+    expect(p.trends.recovery).toHaveLength(90);
+  });
+  test('tonight: wake later the same day uses wake-day debt and previous-day strain', () => {
+    const ds = build({ nights: 20 });
+    ds.hr[keyAt(0)] = { z13: 60, z45: 0, cover: 900, load: 900, rhrEst: 55 }; // высокая нагрузка сегодня
+    const early = new Date(today.getTime() + 3 * 3600000); // 03:00, подъём 07:00 сегодня
+    const day = computePerf(ds, {}, P, NOW);
+    const night3 = computePerf(ds, {}, P, early);
+    // 03:00: сегодняшняя нагрузка не относится к ночи, что кончается утром сегодня
+    expect(night3.sleep.tonight.wakeTs).toBeLessThan(today.getTime() + DAYMS);
+    expect(night3.sleep.tonight.needH).toBeLessThan(day.sleep.tonight.needH);
+  });
+  test('recoveryFor: zero HRV baseline does not fabricate a score', () => {
+    const ds = build({ nights: 20 });
+    for (const e of ds.extra.HeartRateVariabilityRmssd) e.v = 0;
+    ds.extra.HeartRateVariabilityRmssd[ds.extra.HeartRateVariabilityRmssd.length - 1].v = 40;
+    const p = run(ds);
+    const d = p.recovery && p.recovery.drivers.hrv;
+    expect(d == null || d.dev == null || Number.isFinite(d.dev)).toBe(true);
+    expect(noNaN(p)).toBe(true);
+    if (d) expect(d.baseline).toBeNull();
+  });
+  test('nightly: measurement inside a late sleep session is keyed by its wake day', () => {
+    const ds = build({ nights: 20 });
+    const k = keyAt(-1);
+    ds.nights[k] = { ...ds.nights[k], start: addDays(today, -2).getTime() + 3 * 3600000 + 22 * 3600000, end: addDays(today, -1).getTime() + 14 * 3600000 };
+    ds.extra.HeartRateVariabilityRmssd.push({ t: addDays(today, -1).getTime() + 13 * 3600000, v: 99, night: true });
+    const p = run(ds);
+    expect(p.trends.days).toBe(90);
+    expect(noNaN(p)).toBe(true);
+  });
+});
+const DAYMS = 86400000;

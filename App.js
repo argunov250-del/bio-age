@@ -16,7 +16,7 @@ import { computePerf } from './lib/perf/index';
 import { buildDetail } from './lib/details';
 import { FadeIn } from './lib/ui';
 import { GlassTabBar } from './lib/GlassTabBar';
-import { BlurTargetHost, ShellContext } from './lib/glassKit';
+import { BlurTargetHost, BlurTargetProvider, ShellContext } from './lib/glassKit';
 import { ScreenIn } from './lib/motion';
 import { IconToday, IconSleep, IconStrain, IconTrends, IconJournal } from './lib/icons';
 import { LaunchScreen } from './lib/screens/LaunchScreen';
@@ -322,26 +322,35 @@ function Main() {
     setScreen(profile ? pendingRoute.current : 'setup');
   }, [profile]);
 
+  // Стек экранов поверх вкладок: «Назад» возвращает на предыдущий экран/вкладку, а не сразу на главную.
+  const navStack = useRef([]);
+  const snap = { screen, tab, detail };
   // Открыть вкладку, подробный экран («detail:sleep», «workout:3») или отдельный экран.
-  const open = useCallback((key) => {
+  // fresh — сбросить стек (ссылка из виджета, переход на вкладку).
+  const open = useCallback((key, fresh) => {
     if (key === 'debug' && !devMode) return;
+    const pushCur = () => { if (fresh) navStack.current = []; else navStack.current = [...navStack.current, snap]; };
     if (key === 'home') {
+      navStack.current = [];
       setTab('today');
       setScreen('home');
     } else if (key.startsWith('tab:') || (key !== 'sleep' && TAB_KEYS.includes(key))) {
       const k = key.replace(/^tab:/, '');
-      if (TAB_KEYS.includes(k)) { setTab(k); setScreen('home'); }
+      if (TAB_KEYS.includes(k)) { navStack.current = []; setTab(k); setScreen('home'); }
     } else if (PUSHED.includes(key)) {
+      pushCur();
       setScreen(key);
     } else if (key.startsWith('log')) {
+      pushCur();
       setLogType(key.split(':')[1] || null);
       setScreen('log');
     } else if (key.startsWith('detail:') || key.startsWith('workout:')) {
       const [kind, arg] = key.split(':');
-      setDetail({ key: kind === 'workout' ? 'workout' : arg, arg: kind === 'workout' ? +arg : null, from: tab, back: screen === 'workouts' ? 'workouts' : 'home' });
+      pushCur();
+      setDetail({ key: kind === 'workout' ? 'workout' : arg, arg: kind === 'workout' ? +arg : null, from: fresh ? tab : (screen === 'home' ? tab : (detail && detail.from) || tab) });
       setScreen('detail');
-    } else setScreen(key);
-  }, [tab, screen, devMode]);
+    } else { pushCur(); setScreen(key); }
+  }, [tab, screen, detail, devMode]);
 
   useEffect(() => { setChironOpener(() => open('coach')); return () => setChironOpener(null); }, [open]);
 
@@ -356,12 +365,12 @@ function Main() {
     return () => { try { if (sub && sub.remove) sub.remove(); } catch (e) {} };
   }, []);
   useEffect(() => {
-    if (!widgetLink || !profile || screen !== 'home') return;
+    if (!widgetLink || !profile || ['intro', 'setup', 'nohc', 'permissions'].includes(screen)) return;
     let k = null;
     try { k = require('./lib/widgets/links').widgetLinkKey(widgetLink); } catch (e) {}
     if (k && k.startsWith('detail:') && !result) return; // подробный экран нужен расчёт — ждём
     setWidgetLink(null);
-    if (k) open(k);
+    if (k) open(k, true);
   }, [widgetLink, profile, screen, result, open]);
   // Виджет просит фоновый доступ к Health Connect (флаг ставит его задача при добавлении): спрашиваем один раз.
   useEffect(() => {
@@ -369,9 +378,18 @@ function Main() {
     try { require('./lib/widgets/permission').askBackgroundIfFlagged(); } catch (e) {}
   }, [screen, profile]);
 
+  useEffect(() => { if (screen === 'home') navStack.current = []; }, [screen]);
   const goBack = useCallback(() => {
+    if (navStack.current.length) {
+      const prev = navStack.current[navStack.current.length - 1];
+      navStack.current = navStack.current.slice(0, -1);
+      setTab(prev.tab);
+      setDetail(prev.detail);
+      setScreen(prev.screen);
+      return true;
+    }
     if (screen === 'detail') {
-      setScreen(detail && detail.back === 'workouts' ? 'workouts' : 'home');
+      setScreen('home');
       return true;
     }
     if (screen === 'home' && tab !== 'today') {
@@ -552,12 +570,14 @@ function Main() {
   // Экран запуска лежит поверх: когда логотип долетел до шапки, под ним уже
   // открывается главный экран, а запуск растворяется — без чёрной паузы.
   return (
+    <BlurTargetProvider>
     <View style={{ flex: 1, backgroundColor: BACKDROP_BASE }}>
       <BlurTargetHost style={StyleSheet.absoluteFill}><PhotoBackdrop /></BlurTargetHost>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       {screen === 'intro' ? null : <ScreenIn key={screenKey + ':' + (RU ? 'ru' : 'en') + ':' + themeName} dir={nav.dir}>{renderScreen()}</ScreenIn>}
       {splash ? <ColorsContext.Provider value={colors}><LaunchScreen ready={ready} firstRun={ready && !profile} onReveal={onIntroDone} onDone={() => setSplash(false)} /></ColorsContext.Provider> : null}
     </View>
+    </BlurTargetProvider>
   );
 
   function renderScreen() {
@@ -680,7 +700,7 @@ function Main() {
     );
   }
   function coachEl() {
-    return <CoachScreen result={result} profile={profile} perf={perf} onBack={goBack} onTips={() => setScreen('tips')} extra={dayPlan.extra} onReply={dayPlan.onReply} />;
+    return <CoachScreen result={result} profile={profile} perf={perf} onBack={goBack} onTips={() => open('tips')} extra={dayPlan.extra} onReply={dayPlan.onReply} />;
   }
   function metricsEl() {
     return (
