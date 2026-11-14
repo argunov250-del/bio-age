@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, StatusBar, View, AppState, Appearance, Linking } from 'react-native';
+import { BackHandler, StatusBar, StyleSheet, View, AppState, Appearance, Linking } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './lib/ErrorScreen';
 import { applyTheme, resolveTheme } from './lib/theme';
@@ -14,9 +14,11 @@ import { loadDataset } from './lib/metrics';
 import { compute } from './lib/compute';
 import { computePerf } from './lib/perf/index';
 import { buildDetail } from './lib/details';
-import { TabBar, FadeIn } from './lib/ui';
+import { FadeIn } from './lib/ui';
+import { GlassTabBar } from './lib/GlassTabBar';
+import { BlurTargetHost, ShellContext } from './lib/glassKit';
 import { ScreenIn } from './lib/motion';
-import { IconHome, IconActivity, IconProfile, IconChiron, IconGrowth } from './lib/icons';
+import { IconToday, IconSleep, IconStrain, IconTrends, IconJournal } from './lib/icons';
 import { LaunchScreen } from './lib/screens/LaunchScreen';
 import { SetupScreen } from './lib/screens/SetupScreen';
 import { PermissionsScreen } from './lib/screens/PermissionsScreen';
@@ -68,20 +70,25 @@ import { recommend } from './lib/recommend';
 import { setChironOpener } from './lib/chiron';
 import { DebugScreen } from './lib/screens/DebugScreen';
 
-// Вкладки; «Хирон» — центральная круглая кнопка панели.
+// Вкладки (стеклянная панель). Хирон, Профиль, Рост и Метрики — не вкладки, а экраны поверх (PUSHED).
+// Пока экраны вкладок не переписаны: Сегодня — главный, Сон — оценка сна, Нагрузка — оценка нагрузки,
+// Тренды — все метрики, Журнал — «Рост».
 const TABS = [
-  { key: 'home', get title() { return tr('Обзор'); }, Icon: IconHome },
-  { key: 'metrics', get title() { return tr('Метрики'); }, Icon: IconActivity },
-  { key: 'coach', get title() { return tr('Хирон'); }, Icon: IconChiron },
-  { key: 'growth', get title() { return RU ? 'Рост' : 'Growth'; }, Icon: IconGrowth },
-  { key: 'profile', get title() { return tr('Профиль'); }, Icon: IconProfile },
+  { key: 'today', get title() { return RU ? 'Сегодня' : 'Today'; }, Icon: IconToday },
+  { key: 'sleep', get title() { return RU ? 'Сон' : 'Sleep'; }, Icon: IconSleep },
+  { key: 'strain', get title() { return RU ? 'Нагрузка' : 'Strain'; }, Icon: IconStrain },
+  { key: 'trends', get title() { return RU ? 'Тренды' : 'Trends'; }, Icon: IconTrends },
+  { key: 'journal', get title() { return RU ? 'Журнал' : 'Journal'; }, Icon: IconJournal },
 ];
 const TAB_KEYS = TABS.map((t) => t.key);
+// Старые ключи open('…'): вкладка «Обзор» стала «Сегодня»; остальные бывшие вкладки открываются поверх.
+// Ключ 'sleep' остаётся экраном «Режим сна» (вкладка «Сон» открывается как 'tab:sleep').
+const PUSHED = ['coach', 'profile', 'growth', 'metrics'];
 
 function Main() {
   const insets = useSafeAreaInsets();
   const [screen, setScreen] = useState('intro');
-  const [tab, setTab] = useState('home');
+  const [tab, setTab] = useState('today');
   // Подробный экран: { key, arg, from } — палитра берётся от вкладки, с которой открыли.
   const [detail, setDetail] = useState(null);
   const tabIndex = TAB_KEYS.indexOf(tab);
@@ -308,9 +315,14 @@ function Main() {
   // Открыть вкладку, подробный экран («detail:sleep», «workout:3») или отдельный экран.
   const open = useCallback((key) => {
     if (key === 'debug' && !devMode) return;
-    if (TAB_KEYS.includes(key)) {
-      setTab(key);
+    if (key === 'home') {
+      setTab('today');
       setScreen('home');
+    } else if (key.startsWith('tab:') || (key !== 'sleep' && TAB_KEYS.includes(key))) {
+      const k = key.replace(/^tab:/, '');
+      if (TAB_KEYS.includes(k)) { setTab(k); setScreen('home'); }
+    } else if (PUSHED.includes(key)) {
+      setScreen(key);
     } else if (key.startsWith('log')) {
       setLogType(key.split(':')[1] || null);
       setScreen('log');
@@ -352,11 +364,11 @@ function Main() {
       setScreen(detail && detail.back === 'workouts' ? 'workouts' : 'home');
       return true;
     }
-    if (screen === 'home' && tab !== 'home') {
-      setTab('home');
+    if (screen === 'home' && tab !== 'today') {
+      setTab('today');
       return true;
     }
-    if (['debug', 'tips', 'log', 'sleep', 'perf:recovery', 'perf:strain', 'perf:sleep', 'cycle', 'about', 'import', 'achievements', 'recap', 'workouts'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
+    if (['debug', 'tips', 'log', 'coach', 'profile', 'growth', 'metrics', 'sleep', 'perf:recovery', 'perf:strain', 'perf:sleep', 'cycle', 'about', 'import', 'achievements', 'recap', 'workouts'].includes(screen) || (screen === 'setup' && profile) || (screen === 'permissions' && granted.size)) {
       setScreen('home');
       return true;
     }
@@ -531,7 +543,7 @@ function Main() {
   // открывается главный экран, а запуск растворяется — без чёрной паузы.
   return (
     <View style={{ flex: 1, backgroundColor: BACKDROP_BASE }}>
-      <PhotoBackdrop />
+      <BlurTargetHost style={StyleSheet.absoluteFill}><PhotoBackdrop /></BlurTargetHost>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       {screen === 'intro' ? null : <ScreenIn key={screenKey + ':' + (RU ? 'ru' : 'en') + ':' + themeName} dir={nav.dir}>{renderScreen()}</ScreenIn>}
       {splash ? <ColorsContext.Provider value={colors}><LaunchScreen ready={ready} firstRun={ready && !profile} onReveal={onIntroDone} onDone={() => setSplash(false)} /></ColorsContext.Provider> : null}
@@ -609,36 +621,74 @@ function Main() {
           </ColorsContext.Provider>
         );
       }
+      case 'coach':
+        return pushed(coachEl());
+      case 'profile':
+        return pushed(profileEl());
+      case 'growth':
+        return pushed(growthEl());
+      case 'metrics':
+        return pushed(metricsEl());
       default: {
-        const theme = colors;
+        const tabTitle = TABS[Math.max(0, tabIndex)].title;
+        const shell = { onProfile: () => open('profile'), initial: null, title: tabTitle, pushed: false, onBack: goBack };
         return (
           <View style={{ flex: 1 }}>
-            <ColorsContext.Provider value={theme}>
-              <FadeIn key={tab} dir={nav.tabDir}>
-                {tab === 'coach' ? (
-                  <CoachScreen result={result} profile={profile} perf={perf} tabbed bottom={insets.bottom} onBack={goBack} onTips={() => setScreen('tips')} extra={dayPlan.extra} onReply={dayPlan.onReply} />
-                ) : tab === 'metrics' ? (
-                  <MetricsScreen result={result} profile={profile} perf={perf} loading={loading} onRefresh={refresh}
-                    missingAccess={missingAccess} onAskAccess={onRequest} onOpen={open} />
-                ) : tab === 'growth' ? (
-                  <GrowthScreen growth={growthView} plan={dayPlan.plan} activities={activities} water={water} noData={noData}
-                    arc={dayPlan.arc} onArcAct={dayPlan.actArc} achievements={achievements.list} />
-                ) : tab === 'profile' ? (
-                  <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
-                    onSaveProfile={saveQuiet} onCycleChange={onCycleChange} onSettings={onSettings} dataset={dataset} oldAndroid={OLD_ANDROID}
-                    weather={weather} onWeather={onWeather} water={water}
-                    devMode={devMode} onDevUnlock={() => setDevMode(true)} />
-                ) : (
-                  <HomeScreen result={result} profile={profile} perf={perf} loading={loading} error={error} onOpen={open} onRefresh={refresh}
-                    achievements={achievements.list} recap={recap} planLast={planLast} planFromHC={planFromHC} weather={weather} growth={growth} arc={dayPlan.arc} onArcAct={dayPlan.actArc} />
-                )}
-              </FadeIn>
+            <ColorsContext.Provider value={colors}>
+              <ShellContext.Provider value={shell}>
+                <FadeIn key={tab} dir={nav.tabDir}>
+                  {tab === 'sleep' ? (
+                    <SleepScreen perf={perf} onOpen={open} />
+                  ) : tab === 'strain' ? (
+                    <StrainScreen perf={perf} />
+                  ) : tab === 'trends' ? (
+                    metricsEl()
+                  ) : tab === 'journal' ? (
+                    growthEl()
+                  ) : (
+                    <HomeScreen result={result} profile={profile} perf={perf} loading={loading} error={error} onOpen={open} onRefresh={refresh}
+                      achievements={achievements.list} recap={recap} planLast={planLast} planFromHC={planFromHC} weather={weather} growth={growth} arc={dayPlan.arc} onArcAct={dayPlan.actArc} />
+                  )}
+                </FadeIn>
+              </ShellContext.Provider>
             </ColorsContext.Provider>
-            <TabBar tabs={TABS} active={tab} onChange={switchTab} bottom={insets.bottom} />
+            <GlassTabBar tabs={TABS} active={tab} onChange={switchTab} bottom={insets.bottom} />
           </View>
         );
       }
     }
+  }
+
+  // Экран поверх вкладок: палитра, контекст оболочки (кнопка «Назад» в Screen).
+  function pushed(children) {
+    return (
+      <ColorsContext.Provider value={colors}>
+        <ShellContext.Provider value={{ onProfile: () => open('profile'), initial: null, title: null, pushed: true, onBack: goBack }}>{children}</ShellContext.Provider>
+      </ColorsContext.Provider>
+    );
+  }
+  function coachEl() {
+    return <CoachScreen result={result} profile={profile} perf={perf} onBack={goBack} onTips={() => setScreen('tips')} extra={dayPlan.extra} onReply={dayPlan.onReply} />;
+  }
+  function metricsEl() {
+    return (
+      <MetricsScreen result={result} profile={profile} perf={perf} loading={loading} onRefresh={refresh}
+        missingAccess={missingAccess} onAskAccess={onRequest} onOpen={open} />
+    );
+  }
+  function growthEl() {
+    return (
+      <GrowthScreen growth={growthView} plan={dayPlan.plan} activities={activities} water={water} noData={noData}
+        arc={dayPlan.arc} onArcAct={dayPlan.actArc} achievements={achievements.list} />
+    );
+  }
+  function profileEl() {
+    return (
+      <ProfileScreen profile={profile} loading={loading} onOpen={open} onReload={refresh}
+        onSaveProfile={saveQuiet} onCycleChange={onCycleChange} onSettings={onSettings} dataset={dataset} oldAndroid={OLD_ANDROID}
+        weather={weather} onWeather={onWeather} water={water}
+        devMode={devMode} onDevUnlock={() => setDevMode(true)} />
+    );
   }
 }
 

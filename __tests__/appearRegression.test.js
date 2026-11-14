@@ -35,6 +35,7 @@ function setup({ reduce }) {
   jest.doMock('react-native', () => RN, { virtual: true });
   jest.doMock('react-native-safe-area-context', () => ({ SafeAreaView: host('View'), useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }), { virtual: true });
   jest.doMock('expo-haptics', () => ({ impactAsync: async () => {}, selectionAsync: async () => {}, notificationAsync: async () => {}, ImpactFeedbackStyle: {}, NotificationFeedbackType: {} }), { virtual: true });
+  jest.doMock('react-native-svg', () => new Proxy({ __esModule: true }, { get: (t, k) => (k === '__esModule' ? true : k === 'default' ? host('Svg') : typeof k === 'string' ? host(k) : undefined) }), { virtual: true });
   jest.doMock('../lib/icons', () => ({ IconChiron: host('Icon') }));
   return { motion: require('../lib/motion'), ui: require('../lib/ui'), TR: require('react-test-renderer') };
 }

@@ -141,7 +141,7 @@ async function runApp({ lang, stored, theme }) {
   const i18n = require(path.join(ROOT, 'lib/i18n'));
   i18n.setLang(lang);
   const App = require(path.join(ROOT, 'App.js')).default;
-  const { TabBar } = require(path.join(ROOT, 'lib/ui'));
+  const { GlassTabBar: TabBar } = require(path.join(ROOT, 'lib/GlassTabBar'));
   const { LaunchScreen } = require(path.join(ROOT, 'lib/screens/LaunchScreen'));
 
   const flush = async (ms = 3000) => { await act(async () => { jest.advanceTimersByTime(ms); await Promise.resolve(); await Promise.resolve(); }); };
@@ -170,7 +170,7 @@ async function runApp({ lang, stored, theme }) {
   if (stored) {
     const bar = r.root.findAll((n) => n.type === TabBar)[0];
     if (!bar) throw new Error('TabBar не отрисован; экран: ' + seen.start.slice(0, 1500));
-    for (const key of ['metrics', 'coach', 'growth', 'profile', 'home']) {
+    for (const key of ['sleep', 'strain', 'trends', 'journal', 'today']) {
       const b = r.root.findAll((n) => n.type === TabBar)[0];
       await act(async () => { b.props.onChange(key); });
       await flush(); await flush();
@@ -179,25 +179,57 @@ async function runApp({ lang, stored, theme }) {
       if (theme !== 'dark') seen.bare[key] = barePhoto();
     }
   }
+  const pressText = async (re) => {
+    const hit = r.root.findAll((n) => n.type === 'Pressable' && typeof n.props.onPress === 'function' && re.test(collect(n.children, []).join(' ')))[0];
+    if (!hit) throw new Error('Нет кнопки ' + re);
+    await act(async () => { hit.props.onPress(); });
+    await flush();
+  };
+  const openProfile = async () => {
+    const av = r.root.findAll((n) => n.props && n.props.testID === 'avatar-button' && typeof n.props.onPress === 'function')[0];
+    if (!av) throw new Error('Аватар не найден');
+    await act(async () => { av.props.onPress(); });
+    await flush(); await flush();
+  };
+  if (stored) {
+    // Аватар открывает профиль (экран поверх вкладок), «Назад» возвращает на вкладку; остальные экраны поверх тоже открываются.
+    await openProfile();
+    seen.profile = texts();
+    if (theme !== 'dark') seen.bare.profile = barePhoto();
+    await pressText(lang === 'ru' ? /Назад/ : /Back/);
+    seen.afterBack = texts();
+    const { ProfileScreen: PS0 } = require(path.join(ROOT, 'lib/screens/ProfileScreen'));
+    expect(r.root.findAll((n) => n.type === PS0).length).toBe(0);
+    for (const key of ['coach', 'growth', 'metrics']) {
+      const Home = require(path.join(ROOT, 'lib/screens/HomeScreen')).HomeScreen;
+      const h = r.root.findAll((n) => n.type === Home)[0];
+      if (!h) throw new Error('HomeScreen не найден перед ' + key);
+      await act(async () => { h.props.onOpen(key); });
+      await flush(); await flush();
+      seen[key] = texts();
+      if (theme !== 'dark') seen.bare[key] = barePhoto();
+      await pressText(lang === 'ru' ? /Назад|‹/ : /Back|‹/);
+    }
+  }
   if (stored) {
     // Переключение языка и включение уведомлений: ремаунт по ключу, пересчёт, перепланирование.
     const { ProfileScreen } = require(path.join(ROOT, 'lib/screens/ProfileScreen'));
-    await act(async () => { r.root.findAll((n) => n.type === TabBar)[0].props.onChange('profile'); });
-    await flush();
+    await openProfile();
     const ps = r.root.findAll((n) => n.type === ProfileScreen)[0];
     if (!ps) throw new Error('ProfileScreen не найден');
     const other = lang === 'ru' ? 'en' : 'ru';
     await act(async () => { await ps.props.onSettings({ lang: other }); });
     await flush(); await flush();
     seen.switched = texts();
-    expect(seen.switched).toContain(other === 'en' ? 'Profile' : 'Профиль');
-    for (const key of ['home', 'metrics', 'coach', 'growth']) {
+    expect(seen.switched).toContain(other === 'en' ? 'ABOUT ME' : 'ОБО МНЕ');
+    await pressText(lang === 'ru' ? /Back|Назад/ : /Back|Назад/);
+    for (const key of ['today', 'sleep', 'strain', 'trends', 'journal']) {
       await act(async () => { r.root.findAll((n) => n.type === TabBar)[0].props.onChange(key); });
       await flush();
-      texts();
+      const tt = texts();
+      for (const lab of (other === 'en' ? ['Today', 'Sleep', 'Strain', 'Trends', 'Journal'] : ['Сегодня', 'Сон', 'Нагрузка', 'Тренды', 'Журнал'])) expect(tt).toContain(lab);
     }
-    await act(async () => { await r.root.findAll((n) => n.type === TabBar)[0].props.onChange('profile'); });
-    await flush();
+    await openProfile();
     const ps2 = r.root.findAll((n) => n.type === ProfileScreen)[0];
     await act(async () => { await ps2.props.onSettings({ notifyGoals: true }); });
     await flush(); await flush();
@@ -214,11 +246,11 @@ describe.each(['light', 'dark'])('theme=%s', (theme) => {
   test('вкладки отрисованы, тема применена и переключается', async () => {
     const { errors, seen } = await runApp({ lang: 'ru', stored: true, theme });
     expect(errors).toEqual([]);
-    for (const k of ['home', 'metrics', 'coach', 'growth', 'profile']) expect(seen[k].length).toBeGreaterThan(10);
+    for (const k of ['today', 'sleep', 'strain', 'trends', 'journal', 'coach', 'growth', 'metrics', 'profile']) expect(seen[k].length).toBeGreaterThan(10);
     expect(seen.profile).toContain('ТЕМА');
     // Фото-фон: один на всё приложение, не пересоздаётся при смене вкладок.
     expect(seen.backdrops.every((n) => n === 1)).toBe(true);
-    if (theme === 'light') expect(seen.bare).toEqual({ metrics: [], coach: [], growth: [], profile: [], home: [] });
+    if (theme === 'light') expect(seen.bare).toEqual({ sleep: [], strain: [], trends: [], journal: [], today: [], profile: [], coach: [], growth: [], metrics: [] });
     // Убранные настройки анимированного фона отсутствуют.
     expect(seen.profile).not.toContain('Небо по времени суток');
     expect(seen.profile).not.toContain('Сезонные эффекты');
@@ -240,16 +272,17 @@ describe.each(cases)('render lang=%s stored=%s', (lang, stored) => {
     expect(seen.start.length).toBeGreaterThan(10);
     if (stored) {
       // Заголовки вкладок — строки (не функции) на нужном языке.
-      const title = lang === 'ru' ? 'Метрики' : 'Metrics';
-      expect(seen.home).toContain(title);
+      for (const lab of (lang === 'ru' ? ['Сегодня', 'Сон', 'Нагрузка', 'Тренды', 'Журнал'] : ['Today', 'Sleep', 'Strain', 'Trends', 'Journal'])) expect(seen.today).toContain(lab);
+      // Хирон, Рост и Метрики открываются экраном поверх вкладок, без панели вкладок.
+      for (const k of ['coach', 'growth', 'metrics']) expect(seen[k].length).toBeGreaterThan(10);
       expect(seen.profile).toBeTruthy();
       // Первое открытие «Роста» — вводный шаг 1/2.
-      expect(seen.growth).toContain('1/2');
-      expect(seen.growth).toContain(lang === 'ru' ? 'Далее' : 'Next');
+      expect(seen.journal).toContain('1/2');
+      expect(seen.journal).toContain(lang === 'ru' ? 'Далее' : 'Next');
       // Вкладки «Тренировки» нет, тренировки — внизу «Обзора».
-      expect(seen.home).toContain(lang === 'ru' ? 'Все тренировки' : 'All workouts');
-      expect(seen.home).toContain(lang === 'ru' ? 'Добавить тренировку' : 'Add workout');
-      expect(seen.home.indexOf(lang === 'ru' ? 'Все тренировки' : 'All workouts')).toBeGreaterThan(seen.home.indexOf(lang === 'ru' ? 'Готовность' : 'Readiness'));
+      expect(seen.today).toContain(lang === 'ru' ? 'Все тренировки' : 'All workouts');
+      expect(seen.today).toContain(lang === 'ru' ? 'Добавить тренировку' : 'Add workout');
+      expect(seen.today.indexOf(lang === 'ru' ? 'Все тренировки' : 'All workouts')).toBeGreaterThan(seen.today.indexOf(lang === 'ru' ? 'Готовность' : 'Readiness'));
     }
   });
 });

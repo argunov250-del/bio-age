@@ -232,8 +232,10 @@ describe('handler and sync', () => {
 
 describe('deep links', () => {
   test('widget links map to app keys; junk is ignored', () => {
-    expect(widgetLinkKey('epimely://tab/home')).toBe('home');
+    expect(widgetLinkKey('epimely://tab/home')).toBe('home'); // старые вкладки: open() ведёт на «Сегодня» / экран поверх
     expect(widgetLinkKey('epimely://tab/growth')).toBe('growth');
+    expect(widgetLinkKey('epimely://tab/today')).toBe('tab:today');
+    expect(widgetLinkKey('epimely://tab/journal')).toBe('tab:journal');
     expect(widgetLinkKey('epimely://detail/readiness')).toBe('detail:readiness');
     for (const bad of [null, undefined, '', 'http://x', 'epimely://tab/evil', 'epimely://detail/a:b', 'epimely://tab/']) expect(widgetLinkKey(bad)).toBeNull();
     for (const u of Object.values(LINKS)) expect(widgetLinkKey(u)).not.toBeNull();
