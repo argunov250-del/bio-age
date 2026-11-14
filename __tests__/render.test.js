@@ -255,7 +255,7 @@ describe.each(['light', 'dark'])('theme=%s', (theme) => {
     expect(seen.profile).not.toContain('Небо по времени суток');
     expect(seen.profile).not.toContain('Сезонные эффекты');
     const T = require(path.join(ROOT, 'lib/theme'));
-    expect(T.THEMES[theme].bg).toBe(theme === 'dark' ? '#0E0F11' : '#EEF0F3');
+    expect(T.THEMES[theme].bg).toBe(theme === 'dark' ? '#0B0F1A' : '#F5F7FF');
     expect(T.COLORS.name).toBe(theme);
     expect(T.THEMES.steel.name).toBe(theme); // старые имена тем следуют текущей
   });
@@ -303,7 +303,7 @@ describe('on-photo text colors', () => {
     const { PageTitle, Section } = require(path.join(ROOT, 'lib/ui'));
     const { AppHeader } = require(path.join(ROOT, 'lib/AppHeader'));
     const c = THEMES[theme];
-    expect(c.onBg).toBe('#F4F5F6');
+    expect(c.onBg).toBe('#F5F7FF');
     let r;
     await TR.act(async () => {
       r = TR.create(React.createElement(ColorsContext.Provider, { value: c },

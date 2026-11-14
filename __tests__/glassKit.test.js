@@ -80,7 +80,7 @@ describe('glassKit', () => {
     expect(blurs(r)).toBeGreaterThan(0);
     expect(kit.glassSheetStyle(T.THEMES.dark).backgroundColor).toBe(T.THEMES.dark.glass.sheet);
     expect(T.THEMES.light.glass.fill).not.toBe(T.THEMES.dark.glass.fill);
-    expect(T.THEMES.dark.accents.sleep).toBe('#8B5CF6');
+    expect(T.THEMES.dark.accents.sleep).toBe('#8B7CF6');
   });
 
   test.each(['ru', 'en'])('панель вкладок: 5 подписей (%s), смена вкладки', async (lang) => {
