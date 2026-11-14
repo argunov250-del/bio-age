@@ -35,6 +35,9 @@ import { ProfileScreen } from './lib/screens/ProfileScreen';
 import { DetailScreen } from './lib/screens/DetailScreen';
 import { RecoveryScreen } from './lib/screens/RecoveryScreen';
 import { StrainScreen } from './lib/screens/StrainScreen';
+import { TrendsScreen } from './lib/screens/TrendsScreen';
+import { JournalScreen } from './lib/screens/JournalScreen';
+import { loadJournal, subscribe as subscribeJournal } from './lib/journal';
 import { SleepScreen } from './lib/screens/SleepScreen';
 import { TipsScreen } from './lib/screens/TipsScreen';
 import { SleepScheduleScreen } from './lib/screens/SleepScheduleScreen';
@@ -71,8 +74,7 @@ import { setChironOpener } from './lib/chiron';
 import { DebugScreen } from './lib/screens/DebugScreen';
 
 // Вкладки (стеклянная панель). Хирон, Профиль, Рост и Метрики — не вкладки, а экраны поверх (PUSHED).
-// Пока экраны вкладок не переписаны: Сегодня — главный, Сон — оценка сна, Нагрузка — оценка нагрузки,
-// Тренды — все метрики, Журнал — «Рост».
+// Нагрузка, Тренды и Журнал — свои экраны; «Метрики» (все показатели) и «Рост» открываются из них поверх вкладок.
 const TABS = [
   { key: 'today', get title() { return RU ? 'Сегодня' : 'Today'; }, Icon: IconToday },
   { key: 'sleep', get title() { return RU ? 'Сон' : 'Sleep'; }, Icon: IconSleep },
@@ -142,6 +144,13 @@ function Main() {
   }, []);
   // Ежедневные активности (вода, витамины, дыхание, пауза): локальные, пересчёт роста после каждого изменения.
   const [activities, setActivities] = useState({});
+  const [journal, setJournal] = useState({});
+  useEffect(() => {
+    let alive = true;
+    Promise.resolve(loadJournal()).then((m) => { if (alive && m) setJournal(m); }).catch(() => {});
+    const unsub = subscribeJournal((m) => { if (alive && m) setJournal({ ...m }); });
+    return () => { alive = false; unsub(); };
+  }, []);
   const resultRef = useRef(null);
   const [opens, setOpens] = useState(null);
   const water = useWater(profile);
@@ -253,9 +262,10 @@ function Main() {
   useEffect(() => { setCoachWeather(weather); }, [weather]);
   const recap = useMemo(() => weekRecap(result, achievements.list), [result, achievements]);
   // Нагрузка / восстановление / сон: считаются один раз после расчёта и отдаются экранам. Сбой — null, не падение.
+  // Журнал привычек и активности идут в расчёт (прогноз энергии, индекс самочувствия, сетка): изменились — пересчёт.
   const perf = useMemo(() => {
-    try { return dataset && result ? computePerf(dataset, result, profile, now) : null; } catch (e) { return null; }
-  }, [result, dataset, profile, now]);
+    try { return dataset && result ? computePerf(dataset, result, profile, now, { journal, activities }) : null; } catch (e) { return null; }
+  }, [result, dataset, profile, now, journal, activities]);
   setLite(profile && profile.lite); // облегчённый режим читается при отрисовке
   useEffect(() => { setHaptics(profile && profile.haptics); }, [profile]);
 
@@ -578,9 +588,9 @@ function Main() {
       case 'perf:recovery':
         return <ColorsContext.Provider value={colors}><RecoveryScreen perf={perf} onBack={goBack} /></ColorsContext.Provider>;
       case 'perf:strain':
-        return <ColorsContext.Provider value={colors}><StrainScreen perf={perf} onBack={goBack} /></ColorsContext.Provider>;
+        return <ColorsContext.Provider value={colors}><StrainScreen perf={perf} onBack={goBack} onOpen={open} /></ColorsContext.Provider>;
       case 'perf:sleep':
-        return <ColorsContext.Provider value={colors}><SleepScreen perf={perf} onBack={goBack} onOpen={open} /></ColorsContext.Provider>;
+        return <ColorsContext.Provider value={colors}><SleepScreen perf={perf} profile={profile} onBack={goBack} onOpen={open} /></ColorsContext.Provider>;
       case 'workouts':
         return (
           <ColorsContext.Provider value={colors}>
@@ -638,15 +648,17 @@ function Main() {
               <ShellContext.Provider value={shell}>
                 <FadeIn key={tab} dir={nav.tabDir}>
                   {tab === 'sleep' ? (
-                    <SleepScreen perf={perf} onOpen={open} />
+                    <SleepScreen perf={perf} profile={profile} onOpen={open} />
                   ) : tab === 'strain' ? (
-                    <StrainScreen perf={perf} />
+                    <StrainScreen perf={perf} onOpen={open} />
                   ) : tab === 'trends' ? (
-                    metricsEl()
+                    <TrendsScreen result={result} profile={profile} perf={perf} loading={loading} onRefresh={refresh}
+                      missingAccess={missingAccess} onAskAccess={onRequest} onOpen={open} />
                   ) : tab === 'journal' ? (
-                    growthEl()
+                    <JournalScreen perf={perf} profile={profile} growth={growth} plan={dayPlan.plan} activities={activities} water={water}
+                      achievements={achievements.list} onOpen={open} onRefresh={refresh} />
                   ) : (
-                    <HomeScreen result={result} profile={profile} perf={perf} loading={loading} error={error} onOpen={open} onRefresh={refresh}
+                    <HomeScreen result={result} profile={profile} perf={perf} dataset={dataset} loading={loading} error={error} onOpen={open} onRefresh={refresh}
                       achievements={achievements.list} recap={recap} planLast={planLast} planFromHC={planFromHC} weather={weather} growth={growth} arc={dayPlan.arc} onArcAct={dayPlan.actArc} />
                   )}
                 </FadeIn>

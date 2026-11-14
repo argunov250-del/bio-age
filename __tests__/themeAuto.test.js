@@ -31,6 +31,6 @@ test('App switches live on mocked Appearance changes', async () => {
 
 test('greeting has date only, no weather text', () => {
   const src = require('fs').readFileSync(require('path').join(__dirname, '../lib/screens/HomeScreen.js'), 'utf8');
-  expect(src).toMatch(/<Text style=\{s\.date\}>\{date\}<\/Text>/);
+  expect(src).toMatch(/style=\{s\.date\}[^>]*>\{loading \? tr\('Обновляю данные…'\) : date\}<\/Text>/);
   expect(src).not.toMatch(/weatherLabel/);
 });

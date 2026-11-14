@@ -276,9 +276,11 @@ describe.each(cases)('render lang=%s stored=%s', (lang, stored) => {
       // Хирон, Рост и Метрики открываются экраном поверх вкладок, без панели вкладок.
       for (const k of ['coach', 'growth', 'metrics']) expect(seen[k].length).toBeGreaterThan(10);
       expect(seen.profile).toBeTruthy();
-      // Первое открытие «Роста» — вводный шаг 1/2.
-      expect(seen.journal).toContain('1/2');
-      expect(seen.journal).toContain(lang === 'ru' ? 'Далее' : 'Next');
+      // Первое открытие экрана «Рост» (поверх вкладок) — вводный шаг 1/2.
+      expect(seen.growth).toContain('1/2');
+      expect(seen.growth).toContain(lang === 'ru' ? 'Далее' : 'Next');
+      // Вкладка «Журнал» — отметки дня и раздел «Рост» с переходом на полный экран.
+      expect(seen.journal).toContain(lang === 'ru' ? 'Отметки дня' : 'Day check-in');
       // Вкладки «Тренировки» нет, тренировки — внизу «Обзора».
       expect(seen.today).toContain(lang === 'ru' ? 'Все тренировки' : 'All workouts');
       expect(seen.today).toContain(lang === 'ru' ? 'Добавить тренировку' : 'Add workout');

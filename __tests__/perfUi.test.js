@@ -194,14 +194,14 @@ describe.each(COMBOS)('cards (%s, %s)', (lang, theme) => {
 });
 
 describe.each([['ru', 'light'], ['en', 'dark']])('HomeScreen (%s, %s)', (lang, theme) => {
-  test.each(['full', 'empty'])('shows three dials above the body-age hero (%s)', async (kind) => {
+  test.each(['full', 'empty'])('hero hotspots (recovery, strain, sleep) come before the body-age card (%s)', async (kind) => {
     const t = await setup(lang, theme);
     const { HomeScreen } = t.req('lib/screens/HomeScreen');
     const r = await t.mount(React.createElement(HomeScreen, { result: null, profile: P, perf: t.perfs[kind], loading: false, error: '', onOpen: () => {}, onRefresh: () => {}, achievements: [], recap: null }));
     const s = t.strings(r);
     const j = s.join('|');
     for (const w of ['Восстановление', 'Нагрузка', 'Сон']) expect(j).toContain(t.tr(w));
-    expect(j.indexOf(t.tr('Нагрузка'))).toBeLessThan(j.indexOf(t.tr('Подробнее')));
+    expect(j.indexOf(t.tr('Нагрузка'))).toBeLessThan(j.indexOf(t.tr('Возраст тела')));
     expect(j).not.toContain(t.tr('Готовность'));
     clean(t, s);
   });
